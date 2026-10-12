@@ -12,7 +12,7 @@ const rateLimitMap = new Map<string, RateLimitRecord>();
 function checkRateLimit(ip: string): boolean {
   const now = Date.now();
   const windowMs = 60 * 1000;
-  const maxRequests = 10;
+  const maxRequests = 30; // อนุญาต 30 คำขอต่อนาทีเพื่อรองรับโหมด AI vs AI
 
   const record = rateLimitMap.get(ip);
   if (!record || now > record.resetAt) {
