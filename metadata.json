@@ -1,0 +1,6 @@
+{
+  "name": "Chess AI",
+  "description": "เล่นหมากรุกสากลกับ AI - A clean, responsive Chess app powered by Gemini",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
