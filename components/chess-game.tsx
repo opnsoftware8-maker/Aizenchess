@@ -91,7 +91,17 @@ export default function ChessGame() {
           }),
         });
 
-        const data = await response.json();
+        const rawText = await response.text();
+        let data: any = null;
+        try {
+          data = JSON.parse(rawText);
+        } catch {
+          throw new Error(
+            `เซิร์ฟเวอร์ตอบกลับไม่ถูกต้อง (${response.status}): ${
+              rawText.length > 100 ? rawText.slice(0, 100) + '...' : rawText || 'ไม่มีข้อมูลตอบกลับ'
+            }`
+          );
+        }
 
         // ตรวจสอบว่าคำขอนี้ยังเป็นคำขอล่าสุดอยู่หรือไม่ (ป้องกัน Stale response จากเกมก่อนหน้า)
         if (requestId !== currentRequestIdRef.current) {

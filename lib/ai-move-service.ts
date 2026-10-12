@@ -63,8 +63,23 @@ export async function processAiMoveRequest(
     };
   }
 
+  let parsedInput = body;
+  if (typeof body === 'string') {
+    try {
+      parsedInput = JSON.parse(body);
+    } catch {
+      return {
+        status: 400,
+        data: {
+          success: false,
+          error: 'รูปแบบข้อมูล JSON ไม่ถูกต้อง',
+        },
+      };
+    }
+  }
+
   // 2. ตรวจสอบ Request ด้วย Zod
-  const parseResult = AiMoveRequestSchema.safeParse(body);
+  const parseResult = AiMoveRequestSchema.safeParse(parsedInput);
   if (!parseResult.success) {
     return {
       status: 400,
