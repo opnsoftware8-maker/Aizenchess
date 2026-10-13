@@ -1,6 +1,51 @@
 import { Chess } from 'chess.js';
 import { GoogleGenAI, Type } from '@google/genai';
-import { AiMoveRequestSchema, AiMoveResponse, AiMoveResponseSchema } from './ai-schema';
+import { z } from 'zod';
+
+// Zod schemas
+export const LegalMoveSchema = z.object({
+  from: z.string().regex(/^[a-hA-H][1-8]$/, 'Invalid from square'),
+  to: z.string().regex(/^[a-hA-H][1-8]$/, 'Invalid to square'),
+  promotion: z
+    .union([z.literal('q'), z.literal('r'), z.literal('b'), z.literal('n'), z.literal(''), z.null()])
+    .optional(),
+  san: z.string().optional(),
+});
+
+export type LegalMove = z.infer<typeof LegalMoveSchema>;
+
+export const AiMoveRequestSchema = z.object({
+  fen: z.string().min(1, 'FEN is required'),
+  aiColor: z.union([z.literal('w'), z.literal('b')]),
+  legalMoves: z.array(LegalMoveSchema).optional(),
+  provider: z.string().optional(),
+  model: z.string().optional(),
+});
+
+export type AiMoveRequest = z.infer<typeof AiMoveRequestSchema>;
+
+export const AiMoveResponseSchema = z.object({
+  from: z.string().regex(/^[a-hA-H][1-8]$/, 'Invalid from square'),
+  to: z.string().regex(/^[a-hA-H][1-8]$/, 'Invalid to square'),
+  promotion: z
+    .union([
+      z.literal('q'),
+      z.literal('r'),
+      z.literal('b'),
+      z.literal('n'),
+      z.literal('Q'),
+      z.literal('R'),
+      z.literal('B'),
+      z.literal('N'),
+      z.literal(''),
+      z.literal('none'),
+      z.null(),
+    ])
+    .optional(),
+  reason: z.any().optional(),
+});
+
+export type AiMoveResponse = z.infer<typeof AiMoveResponseSchema>;
 
 // Rate limiting in-memory: 30 requests per minute per IP
 interface RateLimitRecord {
@@ -90,7 +135,7 @@ export async function processAiMoveRequest(
     };
   }
 
-  const { fen, aiColor, provider = 'gemini', model } = parseResult.data;
+  const { fen, aiColor, model } = parseResult.data;
 
   // 3. Validate Chess Board State
   let game: Chess;
@@ -247,7 +292,13 @@ Return JSON with 'from', 'to', 'promotion' (if pawn promotion, else null), and a
 
   // Caller for Google Gemini
   async function callGemini(promptText: string): Promise<AiMoveResponse | null> {
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey =
+      process.env.GEMINI_API_KEY ||
+      process.env.GOOGLE_API_KEY ||
+      process.env.GEMINI_KEY ||
+      process.env.VITE_GEMINI_API_KEY ||
+      process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+
     if (!apiKey) {
       lastApiError = 'ไม่ได้ตั้งค่า GEMINI_API_KEY ใน Environment Variables';
       return null;
@@ -258,12 +309,11 @@ Return JSON with 'from', 'to', 'promotion' (if pawn promotion, else null), and a
       httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
     });
 
-    const requestedModel = model || process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
+    const requestedModel = model || process.env.GEMINI_MODEL || 'gemini-3.8-flash';
     const modelCandidates = Array.from(
       new Set([
         requestedModel,
         'gemini-3.8-flash',
-        'gemini-3.5-flash-lite',
         'gemini-flash-latest',
         'gemini-3.1-flash-lite',
       ].filter(Boolean) as string[])
@@ -311,7 +361,7 @@ Return JSON with 'from', 'to', 'promotion' (if pawn promotion, else null), and a
 
   // Attempt 2 (Retry once with corrected prompt if invalid)
   if (!validation.valid && (!lastApiError || !lastApiError.includes('ไม่ได้ตั้งค่า'))) {
-    await new Promise((r) => setTimeout(r, 800));
+    await new Promise((r) => setTimeout(r, 600));
 
     const retryPrompt = `Your previous choice was invalid. Choose exactly one move from this legal move list:\n${JSON.stringify(
       legalMovesList,
@@ -334,7 +384,7 @@ Return JSON with 'from', 'to', 'promotion' (if pawn promotion, else null), and a
     };
   }
 
-  // Format safe response on failure or fallback to local legal move if quota exceeded or error occurred
+  // Format safe response on failure or fallback to legal move if quota exceeded or error occurred
   if (!validation.valid || !chosen || !validation.moveResult) {
     if (legalMovesList && legalMovesList.length > 0) {
       const captureMoves = legalMovesList.filter((m) => m.san.includes('x') || m.san.includes('+'));

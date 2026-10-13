@@ -82,28 +82,21 @@ const AI_LEVELS: AiLevelOption[] = [
     name: 'เริ่มต้น (Beginner)',
     level: 'เริ่มต้น',
     model: 'gemini-3.1-flash-lite',
-    desc: 'Gemini 3.1 Flash Lite - รวดเร็ว ฉับไว เหมาะสำหรับฝึกซ้อม',
+    desc: 'Gemini 3.1 Flash Lite - รวดเร็ว ตอบสนองไว เหมาะสำหรับฝึกซ้อม',
   },
   {
     id: 'medium',
     name: 'ระดับกลาง (Intermediate)',
     level: 'ระดับกลาง',
-    model: 'gemini-3.5-flash-lite',
-    desc: 'Gemini 3.5 Flash Lite - สมดุล วางแผนรอบคอบ',
+    model: 'gemini-flash-latest',
+    desc: 'Gemini Flash Latest - ขุมพลังมาตรฐาน วางหมากรัดกุมรอบคอบ',
   },
   {
     id: 'high',
     name: 'ระดับสูง (Advanced)',
     level: 'ระดับสูง',
     model: 'gemini-3.8-flash',
-    desc: 'Gemini 3.8 Flash - วิเคราะห์เชิงลึก คำนวณหมากซับซ้อน',
-  },
-  {
-    id: 'ultimate',
-    name: 'ระดับสูงสุด (Master)',
-    level: 'ระดับสูงสุด',
-    model: 'gemini-flash-latest',
-    desc: 'Gemini Flash Latest - ขุมพลังล่าสุด ตัดสินใจเฉียบขาดระดับมาสเตอร์',
+    desc: 'Gemini 3.8 Flash - ขุมพลังเรือธง วิเคราะห์เชิงลึก คำนวณหมากซับซ้อน',
   },
 ];
 
@@ -125,9 +118,9 @@ export default function ChessGame() {
   const [pendingMode, setPendingMode] = useState<GameMode>('pvai');
 
   // AI model selection per side / mode
-  const [whiteAiModel, setWhiteAiModel] = useState<string>('gemini-3.5-flash-lite');
+  const [whiteAiModel, setWhiteAiModel] = useState<string>('gemini-flash-latest');
   const [blackAiModel, setBlackAiModel] = useState<string>('gemini-3.8-flash');
-  const [playerAiModel, setPlayerAiModel] = useState<string>('gemini-3.5-flash-lite');
+  const [playerAiModel, setPlayerAiModel] = useState<string>('gemini-3.1-flash-lite');
 
   // Board width measurement for react-chessboard
   const boardContainerRef = useRef<HTMLDivElement>(null);
@@ -286,6 +279,11 @@ export default function ChessGame() {
         try {
           data = JSON.parse(rawText);
         } catch {
+          if (rawText.includes('FUNCTION_INVOCATION_FAILED')) {
+            throw new Error(
+              'เซิร์ฟเวอร์ Vercel ขัดข้อง (FUNCTION_INVOCATION_FAILED): เกิดข้อผิดพลาดใน Serverless Function บน Vercel กรุณากดปุ่ม "เดินหมากสำรองทันที" เพื่อเล่นต่อ หรืออัปเดตโค้ดล่าสุดบน GitHub แล้ว redeploy'
+            );
+          }
           throw new Error(
             `เซิร์ฟเวอร์ตอบกลับไม่ถูกต้อง (${response.status}): ${
               rawText.length > 100 ? rawText.slice(0, 100) + '...' : rawText || 'ไม่มีข้อมูลตอบกลับ'
@@ -351,6 +349,43 @@ export default function ChessGame() {
     },
     [gameMode, whiteAiModel, blackAiModel, playerAiModel]
   );
+
+  // Emergency fallback move executed directly on the client if server or AI is unreachable
+  const executeLocalFallbackMove = useCallback(() => {
+    if (gameRef.current.isGameOver()) return;
+    const currentTurnColor = gameRef.current.turn();
+    const legalMoves = gameRef.current.moves({ verbose: true });
+    if (legalMoves.length === 0) return;
+
+    // Prefer tactical captures or checks if available
+    const tacticalMoves = legalMoves.filter((m) => m.san.includes('x') || m.san.includes('+') || m.san.includes('#'));
+    const pool = tacticalMoves.length > 0 ? tacticalMoves : legalMoves;
+    const chosen = pool[Math.floor(Math.random() * pool.length)];
+
+    let moveResult = null;
+    try {
+      moveResult = gameRef.current.move({
+        from: chosen.from,
+        to: chosen.to,
+        promotion: chosen.promotion || undefined,
+      });
+    } catch (e) {
+      console.warn('Fallback move error:', e);
+    }
+
+    if (moveResult) {
+      setAiError(null);
+      setFen(gameRef.current.fen());
+      setHistory(gameRef.current.history());
+      setLastMove({ from: chosen.from, to: chosen.to });
+      const reasonText = 'เดินด้วยเครื่องคำนวณหมากสำรอง (Local Fallback Engine)';
+      if (currentTurnColor === 'w') {
+        setWhiteAiReason(reasonText);
+      } else {
+        setBlackAiReason(reasonText);
+      }
+    }
+  }, []);
 
   // Clear timers on unmount
   useEffect(() => {
@@ -968,7 +1003,13 @@ export default function ChessGame() {
                   <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
                   <span className="leading-relaxed">{aiError}</span>
                 </div>
-                <div className="flex items-center justify-end gap-2 mt-1">
+                <div className="flex flex-wrap items-center justify-end gap-2 mt-1">
+                  <button
+                    onClick={executeLocalFallbackMove}
+                    className="px-3 py-1 rounded bg-amber-600 hover:bg-amber-500 text-white text-xs font-medium transition-colors cursor-pointer"
+                  >
+                    เดินหมากสำรองทันที
+                  </button>
                   {aiError.includes('API_KEY') && (
                     <button
                       onClick={() => {

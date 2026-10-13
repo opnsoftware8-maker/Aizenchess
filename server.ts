@@ -2,7 +2,7 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
-import { processAiMoveRequest } from './lib/ai-move-service.js';
+import { processAiMoveRequest } from './lib/ai-move-service.ts';
 
 dotenv.config();
 
