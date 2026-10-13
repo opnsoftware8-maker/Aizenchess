@@ -79,31 +79,31 @@ interface AiLevelOption {
 const AI_LEVELS: AiLevelOption[] = [
   {
     id: 'beginner',
-    name: 'เริ่มต้น',
+    name: 'เริ่มต้น (Beginner)',
     level: 'เริ่มต้น',
     model: 'gemini-3.1-flash-lite',
-    desc: '3.1 Flash Lite - รวดเร็ว เหมาะสำหรับเริ่มต้น',
+    desc: 'Gemini 3.1 Flash Lite - รวดเร็ว ฉับไว เหมาะสำหรับฝึกซ้อม',
   },
   {
     id: 'medium',
-    name: 'กลาง',
-    level: 'กลาง',
+    name: 'ระดับกลาง (Intermediate)',
+    level: 'ระดับกลาง',
     model: 'gemini-3.5-flash-lite',
-    desc: '3.5 Flash Lite - สมดุลและฉับไว',
+    desc: 'Gemini 3.5 Flash Lite - สมดุล วางแผนรอบคอบ',
   },
   {
-    id: 'medium-high',
-    name: 'กลาง-สูงขึ้น',
-    level: 'กลาง-สูงขึ้น',
+    id: 'high',
+    name: 'ระดับสูง (Advanced)',
+    level: 'ระดับสูง',
     model: 'gemini-3.8-flash',
-    desc: '3.8 Flash - วิเคราะห์เชิงลึก แม่นยำ',
+    desc: 'Gemini 3.8 Flash - วิเคราะห์เชิงลึก คำนวณหมากซับซ้อน',
   },
   {
     id: 'ultimate',
-    name: 'สูงสุดเทพสุด',
-    level: 'สูงสุดเทพสุด',
-    model: 'gemini-3.8-flash',
-    desc: '3.8 Flash - ระดับปรมาจารย์ เสถียรสูงสุด',
+    name: 'ระดับสูงสุด (Master)',
+    level: 'ระดับสูงสุด',
+    model: 'gemini-flash-latest',
+    desc: 'Gemini Flash Latest - ขุมพลังล่าสุด ตัดสินใจเฉียบขาดระดับมาสเตอร์',
   },
 ];
 
@@ -214,6 +214,12 @@ export default function ChessGame() {
   // Helper to find provider name
   const getProviderName = (provId: AiProvider) => {
     return AI_PROVIDERS.find((p) => p.id === provId)?.name || 'AI Engine';
+  };
+
+  // Helper to get formatted AI level and model name
+  const getAiModelName = (modelKey: string) => {
+    const found = AI_LEVELS.find((l) => l.model === modelKey);
+    return found ? `${found.name}` : modelKey;
   };
 
       // Request an AI move for a given side
@@ -620,7 +626,7 @@ export default function ChessGame() {
     if (isUserTurn) {
       return 'ตาของคุณ';
     }
-    return `ตาของ AI (${getProviderName(playerAiOpponent)})`;
+    return `ตาของ AI (${getAiModelName(playerAiModel)})`;
   };
 
   // Group move history in pairs
@@ -650,8 +656,8 @@ export default function ChessGame() {
               </div>
               <p className="text-xs text-neutral-400 hidden sm:block">
                 {gameMode === 'pvai'
-                  ? `ประลองหมากรุกกับ ${getProviderName(playerAiOpponent)}`
-                  : `การแข่งขัน: ${getProviderName(whiteAiProvider)} (ขาว) vs ${getProviderName(blackAiProvider)} (ดำ)`}
+                  ? `ประลองหมากรุกกับ AI (${getAiModelName(playerAiModel)})`
+                  : `การแข่งขัน: ${getAiModelName(whiteAiModel)} (ขาว) vs ${getAiModelName(blackAiModel)} (ดำ)`}
               </p>
             </div>
           </div>
@@ -701,14 +707,14 @@ export default function ChessGame() {
                     <Bot className="w-4 h-4 text-purple-400" />
                     <span>
                       {boardOrientation === 'white'
-                        ? `${getProviderName(blackAiProvider)} (ดำ)`
-                        : `${getProviderName(whiteAiProvider)} (ขาว)`}
+                        ? `${getAiModelName(blackAiModel)} (ดำ)`
+                        : `${getAiModelName(whiteAiModel)} (ขาว)`}
                     </span>
                   </>
                 ) : userColor === 'w' ? (
                   <>
                     <Bot className="w-4 h-4 text-purple-400" />
-                    <span>{getProviderName(playerAiOpponent)} (ฝ่ายดำ)</span>
+                    <span>{getAiModelName(playerAiModel)} (ฝ่ายดำ)</span>
                   </>
                 ) : (
                   <>
@@ -815,8 +821,8 @@ export default function ChessGame() {
                     <Bot className="w-4 h-4 text-purple-400" />
                     <span>
                       {boardOrientation === 'white'
-                        ? `${getProviderName(whiteAiProvider)} (ขาว)`
-                        : `${getProviderName(blackAiProvider)} (ดำ)`}
+                        ? `${getAiModelName(whiteAiModel)} (ขาว)`
+                        : `${getAiModelName(blackAiModel)} (ดำ)`}
                     </span>
                   </>
                 ) : userColor === 'w' ? (
@@ -827,7 +833,7 @@ export default function ChessGame() {
                 ) : (
                   <>
                     <Bot className="w-4 h-4 text-purple-400" />
-                    <span>{getProviderName(playerAiOpponent)} (ฝ่ายขาว)</span>
+                    <span>{getAiModelName(playerAiModel)} (ฝ่ายขาว)</span>
                   </>
                 )}
               </span>
@@ -1003,7 +1009,7 @@ export default function ChessGame() {
                 <div className="flex items-center justify-between mb-1">
                   <div className="flex items-center gap-1.5 font-semibold text-neutral-100">
                     <span className="w-2.5 h-2.5 rounded-full bg-neutral-100 inline-block" />
-                    <span>AI ขาว ({getProviderName(whiteAiProvider)}):</span>
+                    <span>AI ขาว ({getAiModelName(whiteAiModel)}):</span>
                   </div>
                   {currentTurn === 'w' && isAiThinking && (
                     <span className="text-[11px] text-amber-400 animate-pulse">กำลังคำนวณ...</span>
@@ -1019,7 +1025,7 @@ export default function ChessGame() {
                 <div className="flex items-center justify-between mb-1">
                   <div className="flex items-center gap-1.5 font-semibold text-neutral-100">
                     <span className="w-2.5 h-2.5 rounded-full bg-neutral-900 border border-neutral-500 inline-block" />
-                    <span>AI ดำ ({getProviderName(blackAiProvider)}):</span>
+                    <span>AI ดำ ({getAiModelName(blackAiModel)}):</span>
                   </div>
                   {currentTurn === 'b' && isAiThinking && (
                     <span className="text-[11px] text-amber-400 animate-pulse">กำลังคำนวณ...</span>
@@ -1037,7 +1043,7 @@ export default function ChessGame() {
               <div className="bg-[#181a22] rounded-xl border border-[#262a36] p-3.5 shadow-md">
                 <div className="flex items-center gap-1.5 text-xs font-semibold text-neutral-300 mb-1.5">
                   <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                  <span>ความคิดของ {getProviderName(playerAiOpponent)}:</span>
+                  <span>ความคิดของ AI ({getAiModelName(playerAiModel)}):</span>
                 </div>
                 <p className="text-xs text-neutral-300 italic leading-relaxed">
                   {userColor === 'w' ? blackAiReason : whiteAiReason}
