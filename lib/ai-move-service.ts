@@ -2,7 +2,7 @@ import { Chess } from 'chess.js';
 import { GoogleGenAI, Type } from '@google/genai';
 import { AiMoveRequestSchema, AiMoveResponse, AiMoveResponseSchema } from './ai-schema';
 
-// Rate limiting in-memory: 10 requests per minute per IP
+// Rate limiting in-memory: 30 requests per minute per IP
 interface RateLimitRecord {
   count: number;
   resetAt: number;
@@ -12,7 +12,7 @@ const rateLimitMap = new Map<string, RateLimitRecord>();
 export function checkRateLimit(ip: string): boolean {
   const now = Date.now();
   const windowMs = 60 * 1000;
-  const maxRequests = 30; // อนุญาต 30 คำขอต่อนาทีเพื่อรองรับโหมด AI vs AI
+  const maxRequests = 30; // 30 requests per minute
 
   const record = rateLimitMap.get(ip);
   if (!record || now > record.resetAt) {
@@ -52,13 +52,13 @@ export async function processAiMoveRequest(
   body: unknown,
   clientIp: string
 ): Promise<HandleAiMoveResult> {
-  // 1. ตรวจสอบ Rate Limit
+  // 1. Rate Limit
   if (!checkRateLimit(clientIp)) {
     return {
       status: 429,
       data: {
         success: false,
-        error: 'คำขอมากเกินไป (จำกัด 10 ครั้งต่อนาที) กรุณารอสักครู่แล้วลองใหม่',
+        error: 'คำขอมากเกินไป (จำกัด 30 ครั้งต่อนาที) กรุณารอสักครู่แล้วลองใหม่',
       },
     };
   }
@@ -78,7 +78,7 @@ export async function processAiMoveRequest(
     }
   }
 
-  // 2. ตรวจสอบ Request ด้วย Zod
+  // 2. Validate Request with Zod
   const parseResult = AiMoveRequestSchema.safeParse(parsedInput);
   if (!parseResult.success) {
     return {
@@ -90,9 +90,9 @@ export async function processAiMoveRequest(
     };
   }
 
-  const { fen, aiColor } = parseResult.data;
+  const { fen, aiColor, provider = 'gemini', model } = parseResult.data;
 
-  // 3. ตรวจสอบตำแหน่งกระดานด้วย chess.js บนเซิร์ฟเวอร์
+  // 3. Validate Chess Board State
   let game: Chess;
   try {
     game = new Chess(fen);
@@ -126,7 +126,7 @@ export async function processAiMoveRequest(
     };
   }
 
-  // 4. คำนวณตาเดินที่ถูกต้องทั้งหมดบนเซิร์ฟเวอร์ (ไม่เชื่อถือจากไคลเอนต์)
+  // 4. Compute Legal Moves on Server
   const serverLegalMoves = game.moves({ verbose: true });
   if (serverLegalMoves.length === 0) {
     return {
@@ -145,7 +145,7 @@ export async function processAiMoveRequest(
     san: m.san,
   }));
 
-  // Helper ทดสอบความถูกต้องของตาเดินบน chess.js
+  // Test Move validity
   const testMove = (
     candidate: { from: string; to: string; promotion?: string | null }
   ) => {
@@ -204,49 +204,13 @@ export async function processAiMoveRequest(
     }
   };
 
-  // 5. เตรียมเรียกใช้ Gemini API
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return {
-      status: 500,
-      data: {
-        success: false,
-        error: 'ไม่ได้ตั้งค่า GEMINI_API_KEY ในสภาพแวดล้อมระบบ',
-      },
-    };
-  }
-
-  const ai = new GoogleGenAI({
-    apiKey,
-    httpOptions: {
-      headers: {
-        'User-Agent': 'aistudio-build',
-      },
-    },
-  });
-
-  // ใช้ gemini-3.1-flash-lite เป็นโมเดลหลัก (ตัวต่ำสุด เร็วสุด ประหยัดโควตา เสถียรที่สุด)
-  const configuredModel = process.env.GEMINI_MODEL;
-  const defaultPrimaryModel = 'gemini-3.1-flash-lite';
-  const primaryModel = configuredModel && configuredModel !== 'gemini-3.8-flash'
-    ? configuredModel
-    : defaultPrimaryModel;
-
-  const rawModelList = [
-    primaryModel,
-    'gemini-3.1-flash-lite',
-    'gemini-3.1-flash-lite-preview',
-    'gemini-3-flash-preview',
-    'gemini-3.8-flash',
-  ].filter(Boolean) as string[];
-  const modelCandidates = Array.from(new Set(rawModelList));
-
   const systemInstruction = `You are a competitive chess master engine playing as ${
     aiColor === 'w' ? 'White (w)' : 'Black (b)'
   }.
 You must evaluate the position and select the strongest move strictly from the provided list of legal moves.
 Provide a concise explanation in Thai (maximum 120 characters) explaining why this move was chosen.
-You must return only valid JSON adhering to the provided schema.`;
+Return strictly a valid JSON object matching this schema:
+{"from": "square", "to": "square", "promotion": "q|r|b|n|null", "reason": "Thai reason"}`;
 
   const primaryPrompt = `Current board FEN: "${fen}"
 AI Color: "${aiColor}" (${aiColor === 'w' ? 'White' : 'Black'})
@@ -256,39 +220,73 @@ ${JSON.stringify(legalMovesList, null, 2)}
 
 Strict instruction:
 Choose EXACTLY ONE move from the legal moves list above.
-Return the 'from', 'to', 'promotion' (if pawn promotion, else null), and a brief Thai reason in 'reason'.`;
-
-  const responseSchema = {
-    type: Type.OBJECT,
-    properties: {
-      from: {
-        type: Type.STRING,
-        description: 'Source square (e.g., e7)',
-      },
-      to: {
-        type: Type.STRING,
-        description: 'Destination square (e.g., e5)',
-      },
-      promotion: {
-        type: Type.STRING,
-        description: "Promotion piece: 'q', 'r', 'b', 'n', or null",
-        nullable: true,
-      },
-      reason: {
-        type: Type.STRING,
-        description: 'Short Thai explanation of the move (max 120 characters)',
-      },
-    },
-    required: ['from', 'to'],
-  };
+Return JSON with 'from', 'to', 'promotion' (if pawn promotion, else null), and a brief Thai explanation in 'reason'.`;
 
   let lastApiError = '';
 
-  async function requestMoveFromGemini(promptText: string): Promise<AiMoveResponse | null> {
-    for (const model of modelCandidates) {
+  // Generic JSON cleaner
+  function cleanAndParseJson(text: string): AiMoveResponse | null {
+    try {
+      let rawText = text.trim();
+      if (rawText.startsWith('```')) {
+        rawText = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+      }
+      const parsed = JSON.parse(rawText);
+      const validation = AiMoveResponseSchema.safeParse(parsed);
+      if (!validation.success) return null;
+      return {
+        from: String(validation.data.from).trim(),
+        to: String(validation.data.to).trim(),
+        promotion: validation.data.promotion ?? null,
+        reason: typeof validation.data.reason === 'string' ? validation.data.reason.slice(0, 150) : '',
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  // Caller for Google Gemini
+  async function callGemini(promptText: string): Promise<AiMoveResponse | null> {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      lastApiError = 'ไม่ได้ตั้งค่า GEMINI_API_KEY ใน Environment Variables';
+      return null;
+    }
+
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+    });
+
+    const requestedModel = model || process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite';
+    const modelCandidates = Array.from(
+      new Set([
+        requestedModel,
+        'gemini-3.7-flash',
+        'gemini-3.6-flash',
+        'gemini-3.5-flash-lite',
+        'gemini-3.1-flash-lite',
+        'gemini-3.1-flash-lite-preview',
+        'gemini-3-flash-preview',
+        'gemini-3.8-flash',
+      ].filter(Boolean) as string[])
+    );
+
+    const responseSchema = {
+      type: Type.OBJECT,
+      properties: {
+        from: { type: Type.STRING },
+        to: { type: Type.STRING },
+        promotion: { type: Type.STRING, nullable: true },
+        reason: { type: Type.STRING },
+      },
+      required: ['from', 'to'],
+    };
+
+    for (const m of modelCandidates) {
       try {
         const response = await ai.models.generateContent({
-          model,
+          model: m,
           contents: promptText,
           config: {
             systemInstruction,
@@ -298,39 +296,24 @@ Return the 'from', 'to', 'promotion' (if pawn promotion, else null), and a brief
           },
         });
 
-        let rawText = response.text?.trim();
-        if (!rawText) continue;
-
-        // ดึงเฉพาะเนื้อหา JSON กรณีมี Markdown หุ้ม
-        if (rawText.startsWith('```')) {
-          rawText = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+        if (response.text) {
+          const parsed = cleanAndParseJson(response.text);
+          if (parsed) return parsed;
         }
-
-        const parsed = JSON.parse(rawText);
-        const validation = AiMoveResponseSchema.safeParse(parsed);
-        if (!validation.success) continue;
-
-        return {
-          from: String(validation.data.from).trim(),
-          to: String(validation.data.to).trim(),
-          promotion: validation.data.promotion ?? null,
-          reason: typeof validation.data.reason === 'string' ? validation.data.reason.slice(0, 150) : '',
-        };
       } catch (err: any) {
         lastApiError = err?.message || String(err);
-        console.warn(`Gemini attempt failed with model ${model}:`, lastApiError);
-        // ลองโมเดลถัดไปใน modelCandidates
+        console.warn(`Gemini attempt failed with model ${m}:`, lastApiError);
       }
     }
     return null;
   }
 
-  // รอบที่ 1: ขอตาเดินจาก AI
-  let chosen = await requestMoveFromGemini(primaryPrompt);
+  // Attempt 1
+  let chosen = await callGemini(primaryPrompt);
   let validation = chosen ? testMove(chosen) : { valid: false, moveResult: null, newFen: '', from: '', to: '', promotion: null };
 
-  // รอบที่ 2: หากตาเดินไม่ถูกต้อง ให้หน่วงเวลาเล็กน้อยแล้ว Retry 1 ครั้งตามข้อกำหนด
-  if (!validation.valid) {
+  // Attempt 2 (Retry once with corrected prompt if invalid)
+  if (!validation.valid && (!lastApiError || !lastApiError.includes('ไม่ได้ตั้งค่า'))) {
     await new Promise((r) => setTimeout(r, 800));
 
     const retryPrompt = `Your previous choice was invalid. Choose exactly one move from this legal move list:\n${JSON.stringify(
@@ -339,24 +322,27 @@ Return the 'from', 'to', 'promotion' (if pawn promotion, else null), and a brief
       2
     )}`;
 
-    chosen = await requestMoveFromGemini(retryPrompt);
+    chosen = await callGemini(retryPrompt);
     validation = chosen ? testMove(chosen) : { valid: false, moveResult: null, newFen: '', from: '', to: '', promotion: null };
   }
 
-  // หากยังไม่ถูกต้อง ส่งข้อความแจ้งข้อผิดพลาดที่ชัดเจนตามสถานการณ์
+  // Format safe response on failure
   if (!validation.valid || !chosen || !validation.moveResult) {
     let errorMessage = 'AI ตอบกลับตาเดินที่ไม่ถูกต้องหรือไม่สามารถเดินได้ กรุณากดปุ่มลองอีกครั้ง';
     let statusCode = 422;
 
-    if (!chosen && lastApiError) {
-      if (lastApiError.includes('429') || lastApiError.includes('RESOURCE_EXHAUSTED') || lastApiError.toLowerCase().includes('quota')) {
+    if (lastApiError) {
+      if (lastApiError.includes('ไม่ได้ตั้งค่า')) {
+        errorMessage = lastApiError;
+        statusCode = 400;
+      } else if (lastApiError.includes('429') || lastApiError.includes('RESOURCE_EXHAUSTED') || lastApiError.toLowerCase().includes('quota')) {
         errorMessage = 'โควตาการใช้งาน Gemini API เต็มชั่วคราว (Quota Exceeded: 429) กรุณารอสักครู่แล้วกดปุ่มลองอีกครั้ง';
         statusCode = 429;
       } else if (lastApiError.includes('503') || lastApiError.includes('high demand') || lastApiError.includes('UNAVAILABLE')) {
         errorMessage = 'เซิร์ฟเวอร์ AI มีผู้ใช้งานหนาแน่นชั่วคราว (503) กรุณากดปุ่มลองอีกครั้ง';
         statusCode = 503;
       } else {
-        errorMessage = 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ AI ได้ในขณะนี้ กรุณากดปุ่มลองอีกครั้ง';
+        errorMessage = `เกิดข้อผิดพลาดจาก AI: ${lastApiError.slice(0, 120)}`;
         statusCode = 502;
       }
     }

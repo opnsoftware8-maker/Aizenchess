@@ -17,17 +17,95 @@ import {
   SkipForward,
   ChevronRight,
   Shield,
-  Clock,
+  Swords,
+  Info,
+  SlidersHorizontal,
 } from 'lucide-react';
 
 type GameMode = 'pvai' | 'aivsai';
 type PlayerColor = 'w' | 'b';
 type PromotionPiece = 'q' | 'r' | 'b' | 'n';
+type AiProvider = 'gemini' | 'openai' | 'deepseek';
 
 interface PendingPromotion {
   from: Square;
   to: Square;
 }
+
+interface ProviderOption {
+  id: AiProvider;
+  name: string;
+  tagline: string;
+  model: string;
+  badge: string;
+  envKey: string;
+}
+
+const AI_PROVIDERS: ProviderOption[] = [
+  {
+    id: 'gemini',
+    name: 'Google Gemini',
+    tagline: 'โมเดลความเร็วสูง ค่าเริ่มต้นพร้อมใช้งานฟรี',
+    model: 'gemini-3.1-flash-lite',
+    badge: 'ฟรี / แนะนำ',
+    envKey: 'GEMINI_API_KEY',
+  },
+  {
+    id: 'openai',
+    name: 'ChatGPT (OpenAI)',
+    tagline: 'โมเดล GPT-4o-mini วิเคราะห์กลยุทธ์เฉียบคม',
+    model: 'gpt-4o-mini',
+    badge: 'OpenAI',
+    envKey: 'OPENAI_API_KEY',
+  },
+  {
+    id: 'deepseek',
+    name: 'DeepSeek',
+    tagline: 'โมเดล DeepSeek-Chat การคำนวณเชิงลึกชั้นนำ',
+    model: 'deepseek-chat',
+    badge: 'DeepSeek',
+    envKey: 'DEEPSEEK_API_KEY',
+  },
+];
+
+interface AiLevelOption {
+  id: string;
+  name: string;
+  level: string;
+  model: string;
+  desc: string;
+}
+
+const AI_LEVELS: AiLevelOption[] = [
+  {
+    id: 'beginner',
+    name: 'เริ่มต้น',
+    level: 'เริ่มต้น',
+    model: 'gemini-3.1-flash-lite',
+    desc: '3.1 Flash Lite - รวดเร็ว เหมาะสำหรับเริ่มต้น',
+  },
+  {
+    id: 'medium',
+    name: 'กลาง',
+    level: 'กลาง',
+    model: 'gemini-3.5-flash-lite',
+    desc: '3.5 Flash Lite - สมดุลและฉับไว',
+  },
+  {
+    id: 'medium-high',
+    name: 'กลาง-สูงขึ้น',
+    level: 'กลาง-สูงขึ้น',
+    model: 'gemini-3.6-flash',
+    desc: '3.6 Flash - วิเคราะห์เชิงลึก แม่นยำ',
+  },
+  {
+    id: 'ultimate',
+    name: 'สูงสุดเทพสุด',
+    level: 'สูงสุดเทพสุด',
+    model: 'gemini-3.7-flash',
+    desc: '3.7 Flash - ระดับปรมาจารย์ สูงสุด',
+  },
+];
 
 export default function ChessGame() {
   // chess.js instance as the single source of truth
@@ -43,8 +121,44 @@ export default function ChessGame() {
 
   // Setup modal state
   const [showSetupModal, setShowSetupModal] = useState<boolean>(true);
-  const [modalStep, setModalStep] = useState<'mode' | 'color'>('mode');
+  const [modalStep, setModalStep] = useState<'mode' | 'customize' | 'pvai-color' | 'pvai-config' | 'aivsai-config'>('mode');
   const [pendingMode, setPendingMode] = useState<GameMode>('pvai');
+
+  // AI model selection per side / mode
+  const [whiteAiModel, setWhiteAiModel] = useState<string>('gemini-3.5-flash-lite');
+  const [blackAiModel, setBlackAiModel] = useState<string>('gemini-3.6-flash');
+  const [playerAiModel, setPlayerAiModel] = useState<string>('gemini-3.5-flash-lite');
+
+  // Start new game
+  const startNewGame = (mode: GameMode, color: PlayerColor = 'w') => {
+    if (nextMoveTimerRef.current) {
+      clearTimeout(nextMoveTimerRef.current);
+      nextMoveTimerRef.current = null;
+    }
+
+    currentRequestIdRef.current += 1;
+    isAiThinkingRef.current = false;
+
+    const newGame = new Chess();
+    gameRef.current = newGame;
+
+    setGameMode(mode);
+    setUserColor(color);
+    setBoardOrientation(color === 'w' ? 'white' : 'black');
+    setFen(newGame.fen());
+    setHistory([]);
+    setLastMove(null);
+    setSelectedSquare(null);
+    setAiError(null);
+    setWhiteAiReason(null);
+    setBlackAiReason(null);
+    setPendingPromotion(null);
+    setIsAiThinking(false);
+    setIsAiVsAiPaused(false);
+    setGameStarted(true);
+    setShowSetupModal(false);
+  };
+
 
   // Interaction state
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
@@ -61,6 +175,10 @@ export default function ChessGame() {
   const [isAiVsAiPaused, setIsAiVsAiPaused] = useState<boolean>(false);
   const [aiVsAiDelay, setAiVsAiDelay] = useState<number>(2000); // 2 seconds between moves
 
+  const [whiteAiProvider, setWhiteAiProvider] = useState<AiProvider>('gemini');
+  const [blackAiProvider, setBlackAiProvider] = useState<AiProvider>('gemini');
+  const [playerAiOpponent, setPlayerAiOpponent] = useState<AiProvider>('gemini');
+
   // Ref tracking to prevent race conditions
   const isAiThinkingRef = useRef<boolean>(false);
   const currentRequestIdRef = useRef<number>(0);
@@ -71,12 +189,17 @@ export default function ChessGame() {
   const isGameOver = gameRef.current.isGameOver();
   const isUserTurn = gameMode === 'pvai' && currentTurn === userColor;
 
-  // Auto scroll move history
+  // Auto scroll move history - Disabled to prevent unwanted page scrolling
   useEffect(() => {
-    historyEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // historyEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [history]);
 
-  // Request an AI move for a given side
+  // Helper to find provider name
+  const getProviderName = (provId: AiProvider) => {
+    return AI_PROVIDERS.find((p) => p.id === provId)?.name || 'AI Engine';
+  };
+
+      // Request an AI move for a given side
   const requestAiMove = useCallback(
     async (currentFen: string, aiSide: PlayerColor) => {
       const currentGame = gameRef.current;
@@ -102,15 +225,38 @@ export default function ChessGame() {
       }));
 
       try {
-        const response = await fetch('/api/ai-move', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            fen: currentFen,
-            aiColor: aiSide,
-            legalMoves,
-          }),
-        });
+        let response: Response | null = null;
+        let lastFetchErr: any = null;
+
+        const chosenModel = aiSide === 'w' ? whiteAiModel : (gameMode === 'pvai' ? playerAiModel : blackAiModel);
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            response = await fetch('/api/ai-move', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                fen: currentFen,
+                aiColor: aiSide,
+                legalMoves,
+                model: chosenModel,
+              }),
+            });
+            break;
+          } catch (fErr: any) {
+            lastFetchErr = fErr;
+            if (attempt === 0) {
+              await new Promise((r) => setTimeout(r, 800));
+            }
+          }
+        }
+
+        if (!response) {
+          throw new Error(
+            lastFetchErr?.message === 'Failed to fetch' || lastFetchErr?.name === 'TypeError'
+              ? 'การเชื่อมต่อไปยังเซิร์ฟเวอร์ขัดข้องชั่วคราว กรุณากดปุ่ม "ลองอีกครั้ง"'
+              : lastFetchErr?.message || 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้'
+          );
+        }
 
         const rawText = await response.text();
         let data: any = null;
@@ -180,7 +326,7 @@ export default function ChessGame() {
         }
       }
     },
-    []
+    [gameMode, whiteAiModel, blackAiModel, playerAiModel]
   );
 
   // Clear timers on unmount
@@ -236,35 +382,7 @@ export default function ChessGame() {
     requestAiMove,
   ]);
 
-  // Start new game
-  const startNewGame = (mode: GameMode, color: PlayerColor = 'w') => {
-    if (nextMoveTimerRef.current) {
-      clearTimeout(nextMoveTimerRef.current);
-      nextMoveTimerRef.current = null;
-    }
 
-    currentRequestIdRef.current += 1;
-    isAiThinkingRef.current = false;
-
-    const newGame = new Chess();
-    gameRef.current = newGame;
-
-    setGameMode(mode);
-    setUserColor(color);
-    setBoardOrientation(color === 'w' ? 'white' : 'black');
-    setFen(newGame.fen());
-    setHistory([]);
-    setLastMove(null);
-    setSelectedSquare(null);
-    setAiError(null);
-    setWhiteAiReason(null);
-    setBlackAiReason(null);
-    setPendingPromotion(null);
-    setIsAiThinking(false);
-    setIsAiVsAiPaused(false);
-    setGameStarted(true);
-    setShowSetupModal(false);
-  };
 
   // Step manually in AI vs AI mode when paused
   const handleStepAiVsAi = () => {
@@ -471,9 +589,10 @@ export default function ChessGame() {
     }
     if (isAiThinking) {
       if (gameMode === 'aivsai') {
-        return `AI ฝ่าย${currentTurn === 'w' ? 'ขาว' : 'ดำ'} กำลังคิด...`;
+        const prov = currentTurn === 'w' ? whiteAiProvider : blackAiProvider;
+        return `${getProviderName(prov)} (ฝ่าย${currentTurn === 'w' ? 'ขาว' : 'ดำ'}) กำลังคิด...`;
       }
-      return 'AI กำลังคิด...';
+      return `${getProviderName(playerAiOpponent)} กำลังคิด...`;
     }
     if (gameMode === 'aivsai') {
       if (isAiVsAiPaused) {
@@ -484,7 +603,7 @@ export default function ChessGame() {
     if (isUserTurn) {
       return 'ตาของคุณ';
     }
-    return 'ตาของ AI';
+    return `ตาของ AI (${getProviderName(playerAiOpponent)})`;
   };
 
   // Group move history in pairs
@@ -506,7 +625,7 @@ export default function ChessGame() {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex items-center gap-1.5">
-                  <span>Chess AI</span>
+                  <span>Chess AI Battle</span>
                 </h1>
                 <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-500/15 text-blue-400 border border-blue-500/30">
                   {gameMode === 'pvai' ? 'ผู้เล่น vs AI' : 'AI vs AI'}
@@ -514,8 +633,8 @@ export default function ChessGame() {
               </div>
               <p className="text-xs text-neutral-400 hidden sm:block">
                 {gameMode === 'pvai'
-                  ? 'ประลองหมากรุกกับ Gemini AI'
-                  : 'โหมดจำลองการแข่งขัน: Gemini AI ฝ่ายขาว vs ฝ่ายดำ'}
+                  ? `ประลองหมากรุกกับ ${getProviderName(playerAiOpponent)}`
+                  : `การแข่งขัน: ${getProviderName(whiteAiProvider)} (ขาว) vs ${getProviderName(blackAiProvider)} (ดำ)`}
               </p>
             </div>
           </div>
@@ -536,10 +655,10 @@ export default function ChessGame() {
                 setShowSetupModal(true);
               }}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium bg-[#2563eb] hover:bg-[#1d4ed8] text-white transition-colors cursor-pointer shadow-sm"
-              title="เปลี่ยนโหมดหรือเริ่มเกมใหม่"
+              title="ตั้งค่าโมเดล AI หรือเริ่มเกมใหม่"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>เริ่มเกมใหม่</span>
+              <span>เริ่มเกม / ตั้งค่า</span>
             </button>
           </div>
         </div>
@@ -563,12 +682,16 @@ export default function ChessGame() {
                 {gameMode === 'aivsai' ? (
                   <>
                     <Bot className="w-4 h-4 text-purple-400" />
-                    <span>AI ฝ่าย{boardOrientation === 'white' ? 'ดำ' : 'ขาว'}</span>
+                    <span>
+                      {boardOrientation === 'white'
+                        ? `${getProviderName(blackAiProvider)} (ดำ)`
+                        : `${getProviderName(whiteAiProvider)} (ขาว)`}
+                    </span>
                   </>
                 ) : userColor === 'w' ? (
                   <>
                     <Bot className="w-4 h-4 text-purple-400" />
-                    <span>AI ฝ่ายดำ</span>
+                    <span>{getProviderName(playerAiOpponent)} (ฝ่ายดำ)</span>
                   </>
                 ) : (
                   <>
@@ -671,7 +794,11 @@ export default function ChessGame() {
                 {gameMode === 'aivsai' ? (
                   <>
                     <Bot className="w-4 h-4 text-purple-400" />
-                    <span>AI ฝ่าย{boardOrientation === 'white' ? 'ขาว' : 'ดำ'}</span>
+                    <span>
+                      {boardOrientation === 'white'
+                        ? `${getProviderName(whiteAiProvider)} (ขาว)`
+                        : `${getProviderName(blackAiProvider)} (ดำ)`}
+                    </span>
                   </>
                 ) : userColor === 'w' ? (
                   <>
@@ -681,7 +808,7 @@ export default function ChessGame() {
                 ) : (
                   <>
                     <Bot className="w-4 h-4 text-purple-400" />
-                    <span>AI ฝ่ายขาว</span>
+                    <span>{getProviderName(playerAiOpponent)} (ฝ่ายขาว)</span>
                   </>
                 )}
               </span>
@@ -734,7 +861,7 @@ export default function ChessGame() {
                     onClick={handleStepAiVsAi}
                     disabled={isAiThinking}
                     className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-[#272c3b] hover:bg-[#343b4f] text-neutral-200 border border-[#3b4359] transition-colors cursor-pointer"
-                    title="เดินทีละ 1 ตา"
+                    title="สั่งให้ AI เดิน 1 ตา"
                   >
                     <SkipForward className="w-3.5 h-3.5" />
                     <span>เดินทีละตา</span>
@@ -809,20 +936,36 @@ export default function ChessGame() {
               </div>
             </div>
 
-            {/* Error Banner with Retry */}
+            {/* Error Banner with Retry & Quick Switch */}
             {aiError && (
               <div className="mt-3 p-3 rounded-lg bg-red-950/40 border border-red-800/60 text-xs text-red-200 flex flex-col gap-2">
                 <div className="flex items-start gap-1.5">
                   <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-                  <span>{aiError}</span>
+                  <span className="leading-relaxed">{aiError}</span>
                 </div>
-                <button
-                  onClick={() => requestAiMove(gameRef.current.fen(), currentTurn)}
-                  disabled={isAiThinking}
-                  className="self-end px-3 py-1 rounded bg-red-700 hover:bg-red-600 text-white text-xs font-medium transition-colors cursor-pointer"
-                >
-                  ลองอีกครั้ง
-                </button>
+                <div className="flex items-center justify-end gap-2 mt-1">
+                  {aiError.includes('API_KEY') && (
+                    <button
+                      onClick={() => {
+                        setWhiteAiProvider('gemini');
+                        setBlackAiProvider('gemini');
+                        setPlayerAiOpponent('gemini');
+                        setAiError(null);
+                        requestAiMove(gameRef.current.fen(), currentTurn);
+                      }}
+                      className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium transition-colors cursor-pointer"
+                    >
+                      สลับใช้ Gemini แทน
+                    </button>
+                  )}
+                  <button
+                    onClick={() => requestAiMove(gameRef.current.fen(), currentTurn)}
+                    disabled={isAiThinking}
+                    className="px-3 py-1 rounded bg-red-700 hover:bg-red-600 text-white text-xs font-medium transition-colors cursor-pointer"
+                  >
+                    ลองอีกครั้ง
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -833,7 +976,7 @@ export default function ChessGame() {
             <div className="bg-[#181a22] rounded-xl border border-[#262a36] p-4 shadow-md flex flex-col gap-3">
               <div className="flex items-center gap-1.5 text-xs font-semibold text-neutral-300">
                 <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                <span>การวิเคราะห์กลยุทธ์ของ AI ทั้งสองฝ่าย</span>
+                <span>การวิเคราะห์กลยุทธ์ของ AI</span>
               </div>
 
               {/* White AI Card */}
@@ -841,7 +984,7 @@ export default function ChessGame() {
                 <div className="flex items-center justify-between mb-1">
                   <div className="flex items-center gap-1.5 font-semibold text-neutral-100">
                     <span className="w-2.5 h-2.5 rounded-full bg-neutral-100 inline-block" />
-                    <span>AI ฝ่ายขาว:</span>
+                    <span>AI ขาว ({getProviderName(whiteAiProvider)}):</span>
                   </div>
                   {currentTurn === 'w' && isAiThinking && (
                     <span className="text-[11px] text-amber-400 animate-pulse">กำลังคำนวณ...</span>
@@ -857,7 +1000,7 @@ export default function ChessGame() {
                 <div className="flex items-center justify-between mb-1">
                   <div className="flex items-center gap-1.5 font-semibold text-neutral-100">
                     <span className="w-2.5 h-2.5 rounded-full bg-neutral-900 border border-neutral-500 inline-block" />
-                    <span>AI ฝ่ายดำ:</span>
+                    <span>AI ดำ ({getProviderName(blackAiProvider)}):</span>
                   </div>
                   {currentTurn === 'b' && isAiThinking && (
                     <span className="text-[11px] text-amber-400 animate-pulse">กำลังคำนวณ...</span>
@@ -875,7 +1018,7 @@ export default function ChessGame() {
               <div className="bg-[#181a22] rounded-xl border border-[#262a36] p-3.5 shadow-md">
                 <div className="flex items-center gap-1.5 text-xs font-semibold text-neutral-300 mb-1.5">
                   <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                  <span>ความคิดของ AI (Gemini):</span>
+                  <span>ความคิดของ {getProviderName(playerAiOpponent)}:</span>
                 </div>
                 <p className="text-xs text-neutral-300 italic leading-relaxed">
                   {userColor === 'w' ? blackAiReason : whiteAiReason}
@@ -931,10 +1074,137 @@ export default function ChessGame() {
 
       {/* Start / Mode Selection Modal */}
       {showSetupModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-[#181a22] border border-[#2f3547] rounded-2xl p-6 max-w-md w-full text-center shadow-2xl">
-            {modalStep === 'mode' ? (
-              // Step 1: Select Game Mode
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-[#181a22] border border-[#2f3547] rounded-2xl p-5 sm:p-6 max-w-md w-full text-center shadow-2xl my-6">
+            {modalStep === 'pvai-config' ? (
+              <div className="text-left">
+                <h2 className="text-lg sm:text-xl font-bold text-white mb-1 text-center">เลือกระดับความสามารถ AI</h2>
+                <p className="text-xs text-neutral-400 mb-4 text-center">เลือกโมเดล Gemini สำหรับคู่ต่อสู้ของคุณ</p>
+                <div className="space-y-2 mb-4 max-h-[260px] overflow-y-auto pr-1">
+                  {AI_LEVELS.map((lvl) => (
+                    <button
+                      key={lvl.model}
+                      type="button"
+                      onClick={() => setPlayerAiModel(lvl.model)}
+                      className={`w-full p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between ${
+                        playerAiModel === lvl.model
+                          ? 'bg-blue-600/20 border-blue-500 text-white'
+                          : 'bg-[#222632] border-[#313748] text-neutral-300 hover:bg-[#2b3040]'
+                      }`}
+                    >
+                      <div>
+                        <div className="text-sm font-semibold text-white">{lvl.name}</div>
+                        <div className="text-[11px] text-neutral-400">{lvl.desc}</div>
+                      </div>
+                      <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${playerAiModel === lvl.model ? 'border-blue-400 bg-blue-500' : 'border-neutral-500'}`}>
+                        {playerAiModel === lvl.model && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setModalStep('mode')}
+                    className="w-1/3 py-2 rounded-lg bg-[#222632] hover:bg-[#2b3040] text-xs text-neutral-300 transition-colors cursor-pointer"
+                  >
+                    ย้อนกลับ
+                  </button>
+                  <button
+                    onClick={() => setModalStep('pvai-color')}
+                    className="w-2/3 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs text-white font-semibold transition-colors cursor-pointer"
+                  >
+                    ถัดไป (เลือกสี) →
+                  </button>
+                </div>
+              </div>
+            ) : modalStep === 'pvai-color' ? (
+              <div className="text-left">
+                <h2 className="text-lg sm:text-xl font-bold text-white mb-1 text-center">เลือกสีของคุณ</h2>
+                <p className="text-xs text-neutral-400 mb-5 text-center">ฝ่ายขาวจะได้เดินก่อนเสมอ</p>
+                <div className="grid grid-cols-2 gap-3 mb-4">
+                  <button
+                    type="button"
+                    onClick={() => startNewGame('pvai', 'w')}
+                    className="flex flex-col items-center justify-center p-4 rounded-xl bg-[#222632] hover:bg-[#2b3040] border-2 border-transparent hover:border-blue-500 transition-all cursor-pointer group"
+                  >
+                    <div className="text-lg mb-0.5">♔ ฝ่ายขาว</div>
+                    <div className="text-[11px] text-neutral-400">คุณเดินก่อน</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => startNewGame('pvai', 'b')}
+                    className="flex flex-col items-center justify-center p-4 rounded-xl bg-[#222632] hover:bg-[#2b3040] border-2 border-transparent hover:border-blue-500 transition-all cursor-pointer group"
+                  >
+                    <div className="text-lg mb-0.5">♚ ฝ่ายดำ</div>
+                    <div className="text-[11px] text-neutral-400">AI เดินก่อน</div>
+                  </button>
+                </div>
+                <button
+                  onClick={() => setModalStep('pvai-config')}
+                  className="w-full text-xs text-neutral-400 hover:text-white underline transition-colors cursor-pointer text-center"
+                >
+                  ← ย้อนกลับ (เลือกระดับ AI)
+                </button>
+              </div>
+            ) : modalStep === 'aivsai-config' ? (
+              <div className="text-left">
+                <h2 className="text-lg sm:text-xl font-bold text-white mb-1 text-center">ตั้งค่า AI vs AI</h2>
+                <p className="text-xs text-neutral-400 mb-4 text-center">เลือกระดับความสามารถของ AI ทั้งสองฝ่าย</p>
+                
+                <div className="space-y-4 mb-4 max-h-[300px] overflow-y-auto pr-1">
+                  <div>
+                    <label className="text-xs font-semibold text-neutral-300 block mb-1.5 flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-neutral-100 inline-block" />
+                      <span>AI ฝ่ายขาว (White AI Level):</span>
+                    </label>
+                    <select
+                      value={whiteAiModel}
+                      onChange={(e) => setWhiteAiModel(e.target.value)}
+                      className="w-full p-2.5 rounded-xl bg-[#222632] border border-[#313748] text-white text-xs focus:outline-none focus:border-purple-500"
+                    >
+                      {AI_LEVELS.map((lvl) => (
+                        <option key={lvl.model} value={lvl.model}>
+                          {lvl.name} ({lvl.desc})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-neutral-300 block mb-1.5 flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-neutral-900 border border-neutral-500 inline-block" />
+                      <span>AI ฝ่ายดำ (Black AI Level):</span>
+                    </label>
+                    <select
+                      value={blackAiModel}
+                      onChange={(e) => setBlackAiModel(e.target.value)}
+                      className="w-full p-2.5 rounded-xl bg-[#222632] border border-[#313748] text-white text-xs focus:outline-none focus:border-purple-500"
+                    >
+                      {AI_LEVELS.map((lvl) => (
+                        <option key={lvl.model} value={lvl.model}>
+                          {lvl.name} ({lvl.desc})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setModalStep('mode')}
+                    className="w-1/3 py-2 rounded-lg bg-[#222632] hover:bg-[#2b3040] text-xs text-neutral-300 transition-colors cursor-pointer"
+                  >
+                    ย้อนกลับ
+                  </button>
+                  <button
+                    onClick={() => startNewGame('aivsai', 'w')}
+                    className="w-2/3 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-xs text-white font-semibold transition-colors cursor-pointer"
+                  >
+                    เริ่มการแข่งขัน AI vs AI ⚔️
+                  </button>
+                </div>
+              </div>
+            ) : (
               <div>
                 <div className="w-12 h-12 mx-auto mb-3 rounded-2xl bg-blue-600/20 text-blue-400 flex items-center justify-center border border-blue-500/30">
                   <Shield className="w-6 h-6" />
@@ -947,10 +1217,7 @@ export default function ChessGame() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
                   {/* Option 1: Player vs AI */}
                   <button
-                    onClick={() => {
-                      setPendingMode('pvai');
-                      setModalStep('color');
-                    }}
+                    onClick={() => setModalStep('pvai-config')}
                     className="flex flex-col items-center justify-between p-4 rounded-xl bg-[#222632] hover:bg-[#2b3040] border-2 border-transparent hover:border-blue-500 transition-all cursor-pointer group text-left"
                   >
                     <div className="w-12 h-12 rounded-full bg-blue-600/20 text-blue-400 flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
@@ -959,33 +1226,30 @@ export default function ChessGame() {
                     <div className="text-center">
                       <h3 className="text-sm font-bold text-white mb-0.5">เล่นกับ AI</h3>
                       <p className="text-[11px] text-neutral-400 leading-tight">
-                        ประลองกลยุทธ์ของคุณกับ Gemini AI
+                        เลือกระดับความสามารถแล้วประลองกัน
                       </p>
                     </div>
                     <span className="mt-3 text-xs text-blue-400 font-semibold inline-flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
-                      เลือกสี <ChevronRight className="w-3.5 h-3.5" />
+                      เลือกระดับ AI <ChevronRight className="w-3.5 h-3.5" />
                     </span>
                   </button>
 
                   {/* Option 2: AI vs AI */}
                   <button
-                    onClick={() => {
-                      setPendingMode('aivsai');
-                      setModalStep('color');
-                    }}
+                    onClick={() => setModalStep('aivsai-config')}
                     className="flex flex-col items-center justify-between p-4 rounded-xl bg-[#222632] hover:bg-[#2b3040] border-2 border-transparent hover:border-purple-500 transition-all cursor-pointer group text-left"
                   >
                     <div className="w-12 h-12 rounded-full bg-purple-600/20 text-purple-400 flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
-                      <Bot className="w-6 h-6" />
+                      <Swords className="w-6 h-6" />
                     </div>
                     <div className="text-center">
                       <h3 className="text-sm font-bold text-white mb-0.5">AI vs AI</h3>
                       <p className="text-[11px] text-neutral-400 leading-tight">
-                        ชม Gemini AI แข่งกันเอง (White vs Black)
+                        เลือก AI 2 ตัวมาแข่งขันกันเอง
                       </p>
                     </div>
                     <span className="mt-3 text-xs text-purple-400 font-semibold inline-flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
-                      ตั้งค่าชมเกม <ChevronRight className="w-3.5 h-3.5" />
+                      ตั้งค่า AI คู่แข่ง <ChevronRight className="w-3.5 h-3.5" />
                     </span>
                   </button>
                 </div>
@@ -999,73 +1263,11 @@ export default function ChessGame() {
                   </button>
                 )}
               </div>
-            ) : (
-              // Step 2: Select Color or Orientation
-              <div>
-                <h2 className="text-xl font-bold text-white mb-1">
-                  {pendingMode === 'pvai' ? 'เลือกสีที่คุณต้องการเล่น' : 'เลือกมุมมองกระดาน'}
-                </h2>
-                <p className="text-xs text-neutral-400 mb-5">
-                  {pendingMode === 'pvai'
-                    ? 'ฝ่ายขาวจะได้เดินก่อนเสมอ'
-                    : 'เลือกด้านที่คุณต้องการชมการแข่งขัน'}
-                </p>
-
-                <div className="grid grid-cols-2 gap-3 mb-4">
-                  {/* White Choice */}
-                  <button
-                    onClick={() => startNewGame(pendingMode, 'w')}
-                    className="flex flex-col items-center justify-center p-4 rounded-xl bg-[#222632] hover:bg-[#2b3040] border-2 border-transparent hover:border-blue-500 transition-all cursor-pointer group"
-                  >
-                    <div className="w-12 h-12 rounded-full bg-neutral-100 text-neutral-900 flex items-center justify-center text-xl font-bold shadow-md mb-2 group-hover:scale-105 transition-transform">
-                      ♔
-                    </div>
-                    <span className="text-sm font-semibold text-white">
-                      {pendingMode === 'pvai' ? 'เล่นฝ่ายขาว' : 'ชมจากฝั่งขาว'}
-                    </span>
-                    <span className="text-[11px] text-neutral-400 mt-0.5">
-                      {pendingMode === 'pvai' ? 'คุณเดินก่อน' : 'ฝ่ายขาวเดินก่อน'}
-                    </span>
-                  </button>
-
-                  {/* Black Choice */}
-                  <button
-                    onClick={() => startNewGame(pendingMode, 'b')}
-                    className="flex flex-col items-center justify-center p-4 rounded-xl bg-[#222632] hover:bg-[#2b3040] border-2 border-transparent hover:border-blue-500 transition-all cursor-pointer group"
-                  >
-                    <div className="w-12 h-12 rounded-full bg-neutral-900 text-neutral-100 border border-neutral-700 flex items-center justify-center text-xl font-bold shadow-md mb-2 group-hover:scale-105 transition-transform">
-                      ♚
-                    </div>
-                    <span className="text-sm font-semibold text-white">
-                      {pendingMode === 'pvai' ? 'เล่นฝ่ายดำ' : 'ชมจากฝั่งดำ'}
-                    </span>
-                    <span className="text-[11px] text-neutral-400 mt-0.5">
-                      {pendingMode === 'pvai' ? 'AI เดินก่อน' : 'ฝ่ายขาวเดินก่อน'}
-                    </span>
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-center gap-4 mt-2">
-                  <button
-                    onClick={() => setModalStep('mode')}
-                    className="text-xs text-neutral-400 hover:text-white underline transition-colors cursor-pointer"
-                  >
-                    ← ย้อนกลับไปเลือกโหมด
-                  </button>
-                  {gameStarted && (
-                    <button
-                      onClick={() => setShowSetupModal(false)}
-                      className="text-xs text-neutral-400 hover:text-white underline transition-colors cursor-pointer"
-                    >
-                      ยกเลิก
-                    </button>
-                  )}
-                </div>
-              </div>
             )}
           </div>
         </div>
       )}
+
     </div>
   );
 }

@@ -15,6 +15,8 @@ export const AiMoveRequestSchema = z.object({
   fen: z.string().min(1, 'FEN is required'),
   aiColor: z.union([z.literal('w'), z.literal('b')]),
   legalMoves: z.array(LegalMoveSchema).optional(),
+  provider: z.string().optional(),
+  model: z.string().optional(),
 });
 
 export type AiMoveRequest = z.infer<typeof AiMoveRequestSchema>;

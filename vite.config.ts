@@ -12,39 +12,51 @@ export default defineConfig(() => {
         name: 'api-ai-move-plugin',
         configureServer(server) {
           server.middlewares.use(async (req, res, next) => {
-            if (req.url && req.url.startsWith('/api/ai-move') && req.method === 'POST') {
-              let bodyStr = '';
-              req.on('data', (chunk) => {
-                bodyStr += chunk;
-              });
-              req.on('end', async () => {
-                try {
-                  const body = JSON.parse(bodyStr || '{}');
-                  const forwarded = req.headers['x-forwarded-for'];
-                  const ip = Array.isArray(forwarded)
-                    ? forwarded[0]
-                    : typeof forwarded === 'string'
-                    ? forwarded.split(',')[0].trim()
-                    : req.socket.remoteAddress || '127.0.0.1';
+            if (req.url && (req.url === '/api/ai-move' || req.url.startsWith('/api/ai-move?') || req.url.startsWith('/api/ai-move/'))) {
+              res.setHeader('Access-Control-Allow-Origin', '*');
+              res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, DELETE');
+              res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-requested-with');
 
-                  const { processAiMoveRequest } = await import('./lib/ai-move-service');
-                  const result = await processAiMoveRequest(body, ip);
+              if (req.method === 'OPTIONS') {
+                res.statusCode = 204;
+                res.end();
+                return;
+              }
 
-                  res.statusCode = result.status;
-                  res.setHeader('Content-Type', 'application/json');
-                  res.end(JSON.stringify(result.data));
-                } catch (err: any) {
-                  res.statusCode = 500;
-                  res.setHeader('Content-Type', 'application/json');
-                  res.end(
-                    JSON.stringify({
-                      success: false,
-                      error: err?.message || 'Server error occurred',
-                    })
-                  );
-                }
-              });
-              return;
+              if (req.method === 'POST') {
+                let bodyStr = '';
+                req.on('data', (chunk) => {
+                  bodyStr += chunk;
+                });
+                req.on('end', async () => {
+                  try {
+                    const body = JSON.parse(bodyStr || '{}');
+                    const forwarded = req.headers['x-forwarded-for'];
+                    const ip = Array.isArray(forwarded)
+                      ? forwarded[0]
+                      : typeof forwarded === 'string'
+                      ? forwarded.split(',')[0].trim()
+                      : req.socket?.remoteAddress || '127.0.0.1';
+
+                    const { processAiMoveRequest } = await import('./lib/ai-move-service');
+                    const result = await processAiMoveRequest(body, ip);
+
+                    res.statusCode = result.status;
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(JSON.stringify(result.data));
+                  } catch (err: any) {
+                    res.statusCode = 500;
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(
+                      JSON.stringify({
+                        success: false,
+                        error: err?.message || 'Server error occurred',
+                      })
+                    );
+                  }
+                });
+                return;
+              }
             }
             next();
           });
