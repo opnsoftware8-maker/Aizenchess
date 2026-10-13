@@ -129,6 +129,23 @@ export default function ChessGame() {
   const [blackAiModel, setBlackAiModel] = useState<string>('gemini-3.6-flash');
   const [playerAiModel, setPlayerAiModel] = useState<string>('gemini-3.5-flash-lite');
 
+  // Board width measurement for react-chessboard
+  const boardContainerRef = useRef<HTMLDivElement>(null);
+  const [boardWidth, setBoardWidth] = useState<number>(400);
+
+  useEffect(() => {
+    if (!boardContainerRef.current) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect.width > 0) {
+          setBoardWidth(Math.floor(entry.contentRect.width));
+        }
+      }
+    });
+    observer.observe(boardContainerRef.current);
+    return () => observer.disconnect();
+  }, []);
+
   // Start new game
   const startNewGame = (mode: GameMode, color: PlayerColor = 'w') => {
     if (nextMoveTimerRef.current) {
@@ -719,27 +736,29 @@ export default function ChessGame() {
           </div>
 
           {/* Chessboard Box */}
-          <div className="w-full aspect-square relative rounded-xl overflow-hidden shadow-2xl border border-[#2e3342] bg-[#1a1d26]">
-            <Chessboard
-              options={{
-                position: fen,
-                boardOrientation,
-                onPieceDrop: handlePieceDrop,
-                onSquareClick: handleSquareClick,
-                canDragPiece: ({ piece }) =>
-                  gameMode === 'pvai' &&
-                  piece.pieceType.startsWith(userColor) &&
-                  !isAiThinking &&
-                  !isGameOver,
-                squareStyles: getCustomSquareStyles(),
-                darkSquareStyle: { backgroundColor: '#b58863' },
-                lightSquareStyle: { backgroundColor: '#f0d9b5' },
-                boardStyle: {
-                  borderRadius: '12px',
-                },
-                animationDurationInMs: 250,
-              }}
-            />
+          <div ref={boardContainerRef} className="w-full aspect-square relative rounded-xl overflow-hidden shadow-2xl border border-[#2e3342] bg-[#1a1d26]">
+            {boardWidth > 0 && (
+              <Chessboard
+                options={{
+                  position: fen,
+                  boardOrientation,
+                  onPieceDrop: handlePieceDrop,
+                  onSquareClick: handleSquareClick,
+                  canDragPiece: ({ piece }) =>
+                    gameMode === 'pvai' &&
+                    piece.pieceType.startsWith(userColor) &&
+                    !isAiThinking &&
+                    !isGameOver,
+                  squareStyles: getCustomSquareStyles(),
+                  darkSquareStyle: { backgroundColor: '#b58863' },
+                  lightSquareStyle: { backgroundColor: '#f0d9b5' },
+                  boardStyle: {
+                    borderRadius: '12px',
+                  },
+                  animationDurationInMs: 250,
+                }}
+              />
+            )}
 
             {/* Pawn Promotion Dialog (for Player vs AI mode) */}
             {pendingPromotion && (
