@@ -95,15 +95,15 @@ const AI_LEVELS: AiLevelOption[] = [
     id: 'medium-high',
     name: 'กลาง-สูงขึ้น',
     level: 'กลาง-สูงขึ้น',
-    model: 'gemini-2.5-flash',
-    desc: '2.5 Flash - วิเคราะห์เชิงลึก แม่นยำ',
+    model: 'gemini-3.8-flash',
+    desc: '3.8 Flash - วิเคราะห์เชิงลึก แม่นยำ',
   },
   {
     id: 'ultimate',
     name: 'สูงสุดเทพสุด',
     level: 'สูงสุดเทพสุด',
-    model: 'gemini-2.5-flash',
-    desc: '2.5 Flash - ระดับปรมาจารย์ เสถียรสูงสุด',
+    model: 'gemini-3.8-flash',
+    desc: '3.8 Flash - ระดับปรมาจารย์ เสถียรสูงสุด',
   },
 ];
 
@@ -126,7 +126,7 @@ export default function ChessGame() {
 
   // AI model selection per side / mode
   const [whiteAiModel, setWhiteAiModel] = useState<string>('gemini-3.5-flash-lite');
-  const [blackAiModel, setBlackAiModel] = useState<string>('gemini-2.5-flash');
+  const [blackAiModel, setBlackAiModel] = useState<string>('gemini-3.8-flash');
   const [playerAiModel, setPlayerAiModel] = useState<string>('gemini-3.5-flash-lite');
 
   // Board width measurement for react-chessboard
