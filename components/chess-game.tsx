@@ -1102,7 +1102,7 @@ export default function ChessGame() {
                 <div className="space-y-2 mb-4 max-h-[260px] overflow-y-auto pr-1">
                   {AI_LEVELS.map((lvl) => (
                     <button
-                      key={lvl.model}
+                      key={lvl.id}
                       type="button"
                       onClick={() => setPlayerAiModel(lvl.model)}
                       className={`w-full p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between ${
@@ -1182,7 +1182,7 @@ export default function ChessGame() {
                       className="w-full p-2.5 rounded-xl bg-[#222632] border border-[#313748] text-white text-xs focus:outline-none focus:border-purple-500"
                     >
                       {AI_LEVELS.map((lvl) => (
-                        <option key={lvl.model} value={lvl.model}>
+                        <option key={lvl.id} value={lvl.model}>
                           {lvl.name} ({lvl.desc})
                         </option>
                       ))}
@@ -1200,7 +1200,7 @@ export default function ChessGame() {
                       className="w-full p-2.5 rounded-xl bg-[#222632] border border-[#313748] text-white text-xs focus:outline-none focus:border-purple-500"
                     >
                       {AI_LEVELS.map((lvl) => (
-                        <option key={lvl.model} value={lvl.model}>
+                        <option key={lvl.id} value={lvl.model}>
                           {lvl.name} ({lvl.desc})
                         </option>
                       ))}
