@@ -258,17 +258,14 @@ Return JSON with 'from', 'to', 'promotion' (if pawn promotion, else null), and a
       httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
     });
 
-    const requestedModel = model || process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite';
+    const requestedModel = model || process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
     const modelCandidates = Array.from(
       new Set([
         requestedModel,
-        'gemini-3.7-flash',
-        'gemini-3.6-flash',
+        'gemini-2.5-flash',
         'gemini-3.5-flash-lite',
         'gemini-3.1-flash-lite',
         'gemini-3.1-flash-lite-preview',
-        'gemini-3-flash-preview',
-        'gemini-3.8-flash',
       ].filter(Boolean) as string[])
     );
 
