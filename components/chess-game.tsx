@@ -167,6 +167,13 @@ export default function ChessGame() {
     setIsAiVsAiPaused(false);
     setGameStarted(true);
     setShowSetupModal(false);
+
+    // If Player chose Black, AI is White and plays first automatically!
+    if (mode === 'pvai' && color === 'b') {
+      nextMoveTimerRef.current = setTimeout(() => {
+        requestAiMove(newGame.fen(), 'w');
+      }, 350);
+    }
   };
 
 
@@ -244,7 +251,7 @@ export default function ChessGame() {
         let response: Response | null = null;
         let lastFetchErr: any = null;
 
-        const chosenModel = aiSide === 'w' ? whiteAiModel : (gameMode === 'pvai' ? playerAiModel : blackAiModel);
+        const chosenModel = gameMode === 'pvai' ? playerAiModel : (aiSide === 'w' ? whiteAiModel : blackAiModel);
         for (let attempt = 0; attempt < 2; attempt++) {
           try {
             response = await fetch('/api/ai-move', {
@@ -409,7 +416,11 @@ export default function ChessGame() {
     if (gameMode === 'pvai') {
       const aiColor: PlayerColor = userColor === 'w' ? 'b' : 'w';
       if (gameRef.current.turn() === aiColor && !isAiThinking && !aiError) {
-        requestAiMove(gameRef.current.fen(), aiColor);
+        nextMoveTimerRef.current = setTimeout(() => {
+          if (!isAiThinkingRef.current && gameRef.current.turn() === aiColor && !gameRef.current.isGameOver()) {
+            requestAiMove(gameRef.current.fen(), aiColor);
+          }
+        }, 250);
       }
       return;
     }
@@ -650,7 +661,7 @@ export default function ChessGame() {
         const prov = currentTurn === 'w' ? whiteAiProvider : blackAiProvider;
         return `${getProviderName(prov)} (ฝ่าย${currentTurn === 'w' ? 'ขาว' : 'ดำ'}) กำลังคิด...`;
       }
-      return `${getProviderName(playerAiOpponent)} กำลังคิด...`;
+      return `AI (${getAiModelName(playerAiModel)}) กำลังคิด...`;
     }
     if (gameMode === 'aivsai') {
       if (isAiVsAiPaused) {
@@ -746,15 +757,12 @@ export default function ChessGame() {
                         : `${getAiModelName(whiteAiModel)} (ขาว)`}
                     </span>
                   </>
-                ) : userColor === 'w' ? (
-                  <>
-                    <Bot className="w-4 h-4 text-purple-400" />
-                    <span>{getAiModelName(playerAiModel)} (ฝ่ายดำ)</span>
-                  </>
                 ) : (
                   <>
-                    <User className="w-4 h-4 text-blue-400" />
-                    <span>คุณ (ฝ่ายขาว)</span>
+                    <Bot className="w-4 h-4 text-purple-400" />
+                    <span>
+                      {getAiModelName(playerAiModel)} ({userColor === 'w' ? 'ฝ่ายดำ' : 'ฝ่ายขาว'})
+                    </span>
                   </>
                 )}
               </span>
@@ -788,6 +796,7 @@ export default function ChessGame() {
                   canDragPiece: ({ piece }) =>
                     gameMode === 'pvai' &&
                     piece.pieceType.startsWith(userColor) &&
+                    currentTurn === userColor &&
                     !isAiThinking &&
                     !isGameOver,
                   squareStyles: getCustomSquareStyles(),
@@ -860,15 +869,10 @@ export default function ChessGame() {
                         : `${getAiModelName(blackAiModel)} (ดำ)`}
                     </span>
                   </>
-                ) : userColor === 'w' ? (
-                  <>
-                    <User className="w-4 h-4 text-blue-400" />
-                    <span>คุณ (ฝ่ายขาว)</span>
-                  </>
                 ) : (
                   <>
-                    <Bot className="w-4 h-4 text-purple-400" />
-                    <span>{getAiModelName(playerAiModel)} (ฝ่ายขาว)</span>
+                    <User className="w-4 h-4 text-blue-400" />
+                    <span>คุณ ({userColor === 'w' ? 'ฝ่ายขาว' : 'ฝ่ายดำ'})</span>
                   </>
                 )}
               </span>
@@ -883,7 +887,7 @@ export default function ChessGame() {
                   </>
                 ) : (
                   <span className="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30">
-                    ถึงตาเดิน
+                    {gameMode === 'pvai' ? 'ถึงตาคุณ' : 'ถึงตาเดิน'}
                   </span>
                 )}
               </div>
