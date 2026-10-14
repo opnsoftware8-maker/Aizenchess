@@ -152,12 +152,26 @@ export async function processAiMoveRequest(
         httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
       });
 
-      const testRes = await testAi.models.generateContent({
-        model: 'gemini-3.1-flash-lite',
-        contents: 'Respond with the single word "OK"',
-      });
+      const testModels = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.1-flash-lite'];
+      let testSuccess = false;
+      let lastTestErr: any = null;
 
-      if (testRes.text) {
+      for (const tm of testModels) {
+        try {
+          const testRes = await testAi.models.generateContent({
+            model: tm,
+            contents: 'Respond with the single word "OK"',
+          });
+          if (testRes.text) {
+            testSuccess = true;
+            break;
+          }
+        } catch (tErr: any) {
+          lastTestErr = tErr;
+        }
+      }
+
+      if (testSuccess) {
         return {
           status: 200,
           data: {
@@ -166,13 +180,7 @@ export async function processAiMoveRequest(
           },
         };
       } else {
-        return {
-          status: 200,
-          data: {
-            success: true,
-            message: 'API Key เชื่อมต่อสำเร็จ พร้อมใช้งาน',
-          },
-        };
+        throw lastTestErr || new Error('All test models failed');
       }
     } catch (testErr: any) {
       const msg = testErr?.message || String(testErr);
@@ -390,13 +398,13 @@ Return JSON with 'from', 'to', 'promotion' (if pawn promotion, else null), and a
       httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
     });
 
-    const requestedModel = model || process.env.GEMINI_MODEL || 'gemini-flash-latest';
+    const requestedModel = model || process.env.GEMINI_MODEL || 'gemini-3.8-flash';
     const modelCandidates = Array.from(
       new Set([
         requestedModel,
-        'gemini-flash-latest',
-        'gemini-3.1-flash-lite',
         'gemini-3.8-flash',
+        'gemini-3.5-flash',
+        'gemini-3.1-flash-lite',
         'gemini-3.1-pro-preview',
       ].filter(Boolean) as string[])
     );
