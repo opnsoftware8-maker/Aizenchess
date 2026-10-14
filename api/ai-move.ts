@@ -308,13 +308,13 @@ Return JSON with 'from', 'to', 'promotion' (if pawn promotion, else null), and a
       httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
     });
 
-    const requestedModel = model || process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+    const requestedModel = model || process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite';
     const modelCandidates = Array.from(
       new Set([
         requestedModel,
-        'gemini-3.8-flash',
-        'gemini-flash-latest',
         'gemini-3.1-flash-lite',
+        'gemini-flash-latest',
+        'gemini-3.8-flash',
       ].filter(Boolean) as string[])
     );
 
@@ -348,7 +348,12 @@ Return JSON with 'from', 'to', 'promotion' (if pawn promotion, else null), and a
         }
       } catch (err: any) {
         lastApiError = err?.message || String(err);
-        console.warn(`Gemini attempt failed with model ${m}:`, lastApiError);
+        const isQuota = lastApiError.includes('429') || lastApiError.includes('RESOURCE_EXHAUSTED');
+        if (isQuota) {
+          console.info(`Model ${m} reached free tier quota limit, checking fallback model candidate...`);
+        } else {
+          console.warn(`Gemini attempt failed with model ${m}:`, lastApiError);
+        }
       }
     }
     return null;

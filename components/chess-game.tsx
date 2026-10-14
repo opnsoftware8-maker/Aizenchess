@@ -117,9 +117,8 @@ export default function ChessGame() {
   const [modalStep, setModalStep] = useState<'mode' | 'customize' | 'pvai-color' | 'pvai-config' | 'aivsai-config'>('mode');
   const [pendingMode, setPendingMode] = useState<GameMode>('pvai');
 
-  // AI model selection per side / mode
-  const [whiteAiModel, setWhiteAiModel] = useState<string>('gemini-flash-latest');
-  const [blackAiModel, setBlackAiModel] = useState<string>('gemini-3.8-flash');
+  const [whiteAiModel, setWhiteAiModel] = useState<string>('gemini-3.1-flash-lite');
+  const [blackAiModel, setBlackAiModel] = useState<string>('gemini-3.1-flash-lite');
   const [playerAiModel, setPlayerAiModel] = useState<string>('gemini-3.1-flash-lite');
 
   // Board width measurement for react-chessboard
@@ -789,8 +788,11 @@ export default function ChessGame() {
             {boardWidth > 0 && (
               <Chessboard
                 options={{
+                  id: 'main-chessboard',
                   position: fen,
                   boardOrientation,
+                  showAnimations: false,
+                  animationDurationInMs: 0,
                   onPieceDrop: handlePieceDrop,
                   onSquareClick: handleSquareClick,
                   canDragPiece: ({ piece }) =>
@@ -805,7 +807,6 @@ export default function ChessGame() {
                   boardStyle: {
                     borderRadius: '12px',
                   },
-                  animationDurationInMs: 250,
                 }}
               />
             )}
