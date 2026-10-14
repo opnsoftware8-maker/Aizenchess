@@ -54,24 +54,24 @@ const AI_LEVELS: AiLevelOption[] = [
     desc: 'รวดเร็ว ตอบสนองไว ใช้ทรัพยากรน้อย เหมาะกับการฝึกซ้อม',
   },
   {
-    id: 'flash-2.5',
-    name: 'Gemini 2.5 Flash (แนะนำ)',
+    id: 'flash-latest',
+    name: 'Gemini Flash Latest (แนะนำ)',
     level: 'ระดับกลาง',
-    model: 'gemini-2.5-flash',
+    model: 'gemini-flash-latest',
     desc: 'ขุมพลังสมดุล คำนวณหมากรัดกุม แม่นยำ และตอบสนองไว',
   },
   {
-    id: 'flash-latest',
-    name: 'Gemini Flash Latest',
+    id: 'flash-3.8',
+    name: 'Gemini 3.8 Flash',
     level: 'มาตรฐาน',
-    model: 'gemini-flash-latest',
-    desc: 'โมเดล Flash เวอร์ชั่นล่าสุด ปรับปรุงการวางหมากยุทธวิธี',
+    model: 'gemini-3.8-flash',
+    desc: 'โมเดล Flash เจเนอเรชันใหม่ ปรับปรุงการวางหมากยุทธวิธี',
   },
   {
-    id: 'pro-2.5',
-    name: 'Gemini 2.5 Pro',
+    id: 'pro-3.1',
+    name: 'Gemini 3.1 Pro Preview',
     level: 'ระดับสูง',
-    model: 'gemini-2.5-pro',
+    model: 'gemini-3.1-pro-preview',
     desc: 'ขุมพลังเรือธง วิเคราะห์เชิงลึก คำนวณหมากซับซ้อนหลายตาเดิน',
   },
 ];
@@ -100,9 +100,9 @@ export default function ChessGame() {
   const [showSetupModal, setShowSetupModal] = useState<boolean>(true);
   const [modalStep, setModalStep] = useState<'mode' | 'pvai-config' | 'pvai-color' | 'aivsai-config'>('mode');
 
-  const [whiteAiModel, setWhiteAiModel] = useState<string>('gemini-2.5-flash');
-  const [blackAiModel, setBlackAiModel] = useState<string>('gemini-2.5-flash');
-  const [playerAiModel, setPlayerAiModel] = useState<string>('gemini-2.5-flash');
+  const [whiteAiModel, setWhiteAiModel] = useState<string>('gemini-flash-latest');
+  const [blackAiModel, setBlackAiModel] = useState<string>('gemini-flash-latest');
+  const [playerAiModel, setPlayerAiModel] = useState<string>('gemini-flash-latest');
 
   // Interaction state
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);

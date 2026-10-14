@@ -153,7 +153,7 @@ export async function processAiMoveRequest(
       });
 
       const testRes = await testAi.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.1-flash-lite',
         contents: 'Respond with the single word "OK"',
       });
 
@@ -390,15 +390,14 @@ Return JSON with 'from', 'to', 'promotion' (if pawn promotion, else null), and a
       httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
     });
 
-    const requestedModel = model || process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+    const requestedModel = model || process.env.GEMINI_MODEL || 'gemini-flash-latest';
     const modelCandidates = Array.from(
       new Set([
         requestedModel,
-        'gemini-2.5-flash',
-        'gemini-2.5-pro',
-        'gemini-3.1-flash-lite',
         'gemini-flash-latest',
+        'gemini-3.1-flash-lite',
         'gemini-3.8-flash',
+        'gemini-3.1-pro-preview',
       ].filter(Boolean) as string[])
     );
 
