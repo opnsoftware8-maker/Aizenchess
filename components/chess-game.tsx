@@ -9,7 +9,6 @@ import {
   RefreshCw,
   AlertCircle,
   Sparkles,
-  Award,
   User,
   Bot,
   Play,
@@ -19,54 +18,24 @@ import {
   Shield,
   Swords,
   Info,
-  SlidersHorizontal,
+  Key,
+  Check,
+  ExternalLink,
+  ShieldCheck,
+  Trash2,
+  Eye,
+  EyeOff,
+  Sparkle,
 } from 'lucide-react';
 
 type GameMode = 'pvai' | 'aivsai';
 type PlayerColor = 'w' | 'b';
 type PromotionPiece = 'q' | 'r' | 'b' | 'n';
-type AiProvider = 'gemini' | 'openai' | 'deepseek';
 
 interface PendingPromotion {
   from: Square;
   to: Square;
 }
-
-interface ProviderOption {
-  id: AiProvider;
-  name: string;
-  tagline: string;
-  model: string;
-  badge: string;
-  envKey: string;
-}
-
-const AI_PROVIDERS: ProviderOption[] = [
-  {
-    id: 'gemini',
-    name: 'Google Gemini',
-    tagline: 'โมเดลความเร็วสูง ค่าเริ่มต้นพร้อมใช้งานฟรี',
-    model: 'gemini-3.1-flash-lite',
-    badge: 'ฟรี / แนะนำ',
-    envKey: 'GEMINI_API_KEY',
-  },
-  {
-    id: 'openai',
-    name: 'ChatGPT (OpenAI)',
-    tagline: 'โมเดล GPT-4o-mini วิเคราะห์กลยุทธ์เฉียบคม',
-    model: 'gpt-4o-mini',
-    badge: 'OpenAI',
-    envKey: 'OPENAI_API_KEY',
-  },
-  {
-    id: 'deepseek',
-    name: 'DeepSeek',
-    tagline: 'โมเดล DeepSeek-Chat การคำนวณเชิงลึกชั้นนำ',
-    model: 'deepseek-chat',
-    badge: 'DeepSeek',
-    envKey: 'DEEPSEEK_API_KEY',
-  },
-];
 
 interface AiLevelOption {
   id: string;
@@ -78,25 +47,32 @@ interface AiLevelOption {
 
 const AI_LEVELS: AiLevelOption[] = [
   {
-    id: 'beginner',
-    name: 'เริ่มต้น (Beginner)',
+    id: 'flash-lite',
+    name: 'Gemini 3.1 Flash Lite',
     level: 'เริ่มต้น',
     model: 'gemini-3.1-flash-lite',
-    desc: 'Gemini 3.1 Flash Lite - รวดเร็ว ตอบสนองไว เหมาะสำหรับฝึกซ้อม',
+    desc: 'รวดเร็ว ตอบสนองไว ใช้ทรัพยากรน้อย เหมาะกับการฝึกซ้อม',
   },
   {
-    id: 'medium',
-    name: 'ระดับกลาง (Intermediate)',
+    id: 'flash-2.5',
+    name: 'Gemini 2.5 Flash (แนะนำ)',
     level: 'ระดับกลาง',
-    model: 'gemini-flash-latest',
-    desc: 'Gemini Flash Latest - ขุมพลังมาตรฐาน วางหมากรัดกุมรอบคอบ',
+    model: 'gemini-2.5-flash',
+    desc: 'ขุมพลังสมดุล คำนวณหมากรัดกุม แม่นยำ และตอบสนองไว',
   },
   {
-    id: 'high',
-    name: 'ระดับสูง (Advanced)',
+    id: 'flash-latest',
+    name: 'Gemini Flash Latest',
+    level: 'มาตรฐาน',
+    model: 'gemini-flash-latest',
+    desc: 'โมเดล Flash เวอร์ชั่นล่าสุด ปรับปรุงการวางหมากยุทธวิธี',
+  },
+  {
+    id: 'pro-2.5',
+    name: 'Gemini 2.5 Pro',
     level: 'ระดับสูง',
-    model: 'gemini-3.8-flash',
-    desc: 'Gemini 3.8 Flash - ขุมพลังเรือธง วิเคราะห์เชิงลึก คำนวณหมากซับซ้อน',
+    model: 'gemini-2.5-pro',
+    desc: 'ขุมพลังเรือธง วิเคราะห์เชิงลึก คำนวณหมากซับซ้อนหลายตาเดิน',
   },
 ];
 
@@ -112,21 +88,78 @@ export default function ChessGame() {
   const [boardOrientation, setBoardOrientation] = useState<'white' | 'black'>('white');
   const [gameStarted, setGameStarted] = useState<boolean>(false);
 
+  // User Custom API Key state (saved in localStorage)
+  const [customApiKey, setCustomApiKey] = useState<string>('');
+  const [showApiKeyModal, setShowApiKeyModal] = useState<boolean>(false);
+  const [inputApiKey, setInputApiKey] = useState<string>('');
+  const [showKeyText, setShowKeyText] = useState<boolean>(false);
+  const [testKeyStatus, setTestKeyStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [testKeyMessage, setTestKeyMessage] = useState<string>('');
+
   // Setup modal state
   const [showSetupModal, setShowSetupModal] = useState<boolean>(true);
-  const [modalStep, setModalStep] = useState<'mode' | 'customize' | 'pvai-color' | 'pvai-config' | 'aivsai-config'>('mode');
-  const [pendingMode, setPendingMode] = useState<GameMode>('pvai');
+  const [modalStep, setModalStep] = useState<'mode' | 'pvai-config' | 'pvai-color' | 'aivsai-config'>('mode');
 
-  const [whiteAiModel, setWhiteAiModel] = useState<string>('gemini-3.1-flash-lite');
-  const [blackAiModel, setBlackAiModel] = useState<string>('gemini-3.1-flash-lite');
-  const [playerAiModel, setPlayerAiModel] = useState<string>('gemini-3.1-flash-lite');
+  const [whiteAiModel, setWhiteAiModel] = useState<string>('gemini-2.5-flash');
+  const [blackAiModel, setBlackAiModel] = useState<string>('gemini-2.5-flash');
+  const [playerAiModel, setPlayerAiModel] = useState<string>('gemini-2.5-flash');
+
+  // Interaction state
+  const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
+  const [lastMove, setLastMove] = useState<{ from: string; to: string } | null>(null);
+  const [isAiThinking, setIsAiThinking] = useState<boolean>(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
+
+  // AI reasoning state
+  const [whiteAiReason, setWhiteAiReason] = useState<string | null>(null);
+  const [blackAiReason, setBlackAiReason] = useState<string | null>(null);
+  const [usedCustomKeyForLastMove, setUsedCustomKeyForLastMove] = useState<boolean>(false);
+
+  // AI vs AI specific controls
+  const [isAiVsAiPaused, setIsAiVsAiPaused] = useState<boolean>(false);
+  const [aiVsAiDelay, setAiVsAiDelay] = useState<number>(1800); // 1.8 seconds between moves
+
+  // Ref tracking to prevent race conditions
+  const isAiThinkingRef = useRef<boolean>(false);
+  const currentRequestIdRef = useRef<number>(0);
+  const nextMoveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const historyEndRef = useRef<HTMLDivElement>(null);
 
   // Board width measurement for react-chessboard
   const boardContainerRef = useRef<HTMLDivElement>(null);
-  const [boardWidth, setBoardWidth] = useState<number>(400);
+  const [boardWidth, setBoardWidth] = useState<number>(460);
+  const [isMounted, setIsMounted] = useState<boolean>(false);
 
+  // Load custom API key from localStorage on mount & set mounted flag
+  useEffect(() => {
+    setIsMounted(true);
+    try {
+      const stored = localStorage.getItem('chess_user_gemini_api_key');
+      if (stored && stored.trim()) {
+        const trimmed = stored.trim();
+        setCustomApiKey(trimmed);
+        setInputApiKey(trimmed);
+      }
+    } catch {
+      // localStorage may fail in restricted iframes
+    }
+  }, []);
+
+  // Responsive board width observer
   useEffect(() => {
     if (!boardContainerRef.current) return;
+    const updateSize = () => {
+      if (boardContainerRef.current) {
+        const width = boardContainerRef.current.clientWidth;
+        if (width > 0) {
+          setBoardWidth(Math.floor(width));
+        }
+      }
+    };
+
+    updateSize();
+
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         if (entry.contentRect.width > 0) {
@@ -134,9 +167,81 @@ export default function ChessGame() {
         }
       }
     });
+
     observer.observe(boardContainerRef.current);
-    return () => observer.disconnect();
+    window.addEventListener('resize', updateSize);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateSize);
+    };
   }, []);
+
+  // Save custom API key
+  const handleSaveApiKey = (keyToSave: string) => {
+    const trimmed = keyToSave.trim();
+    setCustomApiKey(trimmed);
+    setInputApiKey(trimmed);
+    try {
+      if (trimmed) {
+        localStorage.setItem('chess_user_gemini_api_key', trimmed);
+      } else {
+        localStorage.removeItem('chess_user_gemini_api_key');
+      }
+    } catch {
+      // Ignore
+    }
+  };
+
+  // Test custom API key against server test endpoint
+  const handleTestApiKey = async (keyToTest: string) => {
+    const trimmed = keyToTest.trim();
+    if (!trimmed) {
+      setTestKeyStatus('error');
+      setTestKeyMessage('กรุณากรอก API Key ก่อนกดทดสอบ');
+      return;
+    }
+
+    setTestKeyStatus('testing');
+    setTestKeyMessage('กำลังเชื่อมต่อและตรวจสอบ API Key กับ Gemini...');
+
+    try {
+      const res = await fetch('/api/ai-move', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'verify-key',
+          apiKey: trimmed,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setTestKeyStatus('success');
+        setTestKeyMessage(data.message || 'API Key ใช้งานได้สมบูรณ์!');
+        handleSaveApiKey(trimmed);
+      } else {
+        setTestKeyStatus('error');
+        setTestKeyMessage(data.error || 'การตรวจสอบ API Key ล้มเหลว กรุณาตรวจสอบคีย์');
+      }
+    } catch (err: any) {
+      setTestKeyStatus('error');
+      setTestKeyMessage(`ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์เพื่อทดสอบคีย์: ${err?.message || 'Network error'}`);
+    }
+  };
+
+  // Clear custom API key
+  const handleClearApiKey = () => {
+    setCustomApiKey('');
+    setInputApiKey('');
+    setTestKeyStatus('idle');
+    setTestKeyMessage('');
+    try {
+      localStorage.removeItem('chess_user_gemini_api_key');
+    } catch {
+      // Ignore
+    }
+  };
 
   // Start new game
   const startNewGame = (mode: GameMode, color: PlayerColor = 'w') => {
@@ -167,52 +272,14 @@ export default function ChessGame() {
     setGameStarted(true);
     setShowSetupModal(false);
 
-    // If Player chose Black, AI is White and plays first automatically!
+    // If Player chose Black in PvAI mode: AI is White and plays first automatically!
     if (mode === 'pvai' && color === 'b') {
       nextMoveTimerRef.current = setTimeout(() => {
-        requestAiMove(newGame.fen(), 'w');
-      }, 350);
+        if (!isAiThinkingRef.current && gameRef.current.turn() === 'w') {
+          requestAiMove(newGame.fen(), 'w');
+        }
+      }, 300);
     }
-  };
-
-
-  // Interaction state
-  const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
-  const [lastMove, setLastMove] = useState<{ from: string; to: string } | null>(null);
-  const [isAiThinking, setIsAiThinking] = useState<boolean>(false);
-  const [aiError, setAiError] = useState<string | null>(null);
-  const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
-
-  // AI reasoning state
-  const [whiteAiReason, setWhiteAiReason] = useState<string | null>(null);
-  const [blackAiReason, setBlackAiReason] = useState<string | null>(null);
-
-  // AI vs AI specific controls
-  const [isAiVsAiPaused, setIsAiVsAiPaused] = useState<boolean>(false);
-  const [aiVsAiDelay, setAiVsAiDelay] = useState<number>(2000); // 2 seconds between moves
-
-  const [whiteAiProvider, setWhiteAiProvider] = useState<AiProvider>('gemini');
-  const [blackAiProvider, setBlackAiProvider] = useState<AiProvider>('gemini');
-  const [playerAiOpponent, setPlayerAiOpponent] = useState<AiProvider>('gemini');
-
-  // Ref tracking to prevent race conditions
-  const isAiThinkingRef = useRef<boolean>(false);
-  const currentRequestIdRef = useRef<number>(0);
-  const nextMoveTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const historyEndRef = useRef<HTMLDivElement>(null);
-
-  const currentTurn = gameRef.current.turn();
-  const isGameOver = gameRef.current.isGameOver();
-  const isUserTurn = gameMode === 'pvai' && currentTurn === userColor;
-
-  // Auto scroll move history - Disabled to prevent unwanted page scrolling
-  useEffect(() => {
-    // historyEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [history]);
-
-  // Helper to find provider name
-  const getProviderName = (provId: AiProvider) => {
-    return AI_PROVIDERS.find((p) => p.id === provId)?.name || 'AI Engine';
   };
 
   // Helper to get formatted AI level and model name
@@ -221,7 +288,7 @@ export default function ChessGame() {
     return found ? `${found.name}` : modelKey;
   };
 
-      // Request an AI move for a given side
+  // Request an AI move for a given side
   const requestAiMove = useCallback(
     async (currentFen: string, aiSide: PlayerColor) => {
       const currentGame = gameRef.current;
@@ -251,23 +318,28 @@ export default function ChessGame() {
         let lastFetchErr: any = null;
 
         const chosenModel = gameMode === 'pvai' ? playerAiModel : (aiSide === 'w' ? whiteAiModel : blackAiModel);
+        
         for (let attempt = 0; attempt < 2; attempt++) {
           try {
             response = await fetch('/api/ai-move', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: {
+                'Content-Type': 'application/json',
+                ...(customApiKey ? { 'x-gemini-api-key': customApiKey.trim() } : {}),
+              },
               body: JSON.stringify({
                 fen: currentFen,
                 aiColor: aiSide,
                 legalMoves,
                 model: chosenModel,
+                apiKey: customApiKey ? customApiKey.trim() : undefined,
               }),
             });
             break;
           } catch (fErr: any) {
             lastFetchErr = fErr;
             if (attempt === 0) {
-              await new Promise((r) => setTimeout(r, 800));
+              await new Promise((r) => setTimeout(r, 600));
             }
           }
         }
@@ -275,7 +347,7 @@ export default function ChessGame() {
         if (!response) {
           throw new Error(
             lastFetchErr?.message === 'Failed to fetch' || lastFetchErr?.name === 'TypeError'
-              ? 'การเชื่อมต่อไปยังเซิร์ฟเวอร์ขัดข้องชั่วคราว กรุณากดปุ่ม "ลองอีกครั้ง"'
+              ? 'การเชื่อมต่อไปยังเซิร์ฟเวอร์ขัดข้อง กรุณากดปุ่ม "เดินหมากสำรอง" หรือลองใหม่อีกครั้ง'
               : lastFetchErr?.message || 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้'
           );
         }
@@ -287,7 +359,7 @@ export default function ChessGame() {
         } catch {
           if (rawText.includes('FUNCTION_INVOCATION_FAILED')) {
             throw new Error(
-              'เซิร์ฟเวอร์ Vercel ขัดข้อง (FUNCTION_INVOCATION_FAILED): เกิดข้อผิดพลาดใน Serverless Function บน Vercel กรุณากดปุ่ม "เดินหมากสำรองทันที" เพื่อเล่นต่อ หรืออัปเดตโค้ดล่าสุดบน GitHub แล้ว redeploy'
+              'เซิร์ฟเวอร์ Vercel ขัดข้อง (FUNCTION_INVOCATION_FAILED): กรุณากดปุ่ม "เดินหมากสำรองทันที" เพื่อเล่นต่อ หรือใส่ Gemini API Key ส่วนตัว'
             );
           }
           throw new Error(
@@ -297,7 +369,7 @@ export default function ChessGame() {
           );
         }
 
-        // Ignore stale responses
+        // Ignore stale responses if game has moved on
         if (requestId !== currentRequestIdRef.current) {
           return;
         }
@@ -332,6 +404,7 @@ export default function ChessGame() {
         setFen(nextFen);
         setHistory(gameRef.current.history());
         setLastMove({ from: data.move.from, to: data.move.to });
+        setUsedCustomKeyForLastMove(Boolean(data.move.isCustomKey || customApiKey));
 
         // Save reasoning per side
         if (data.move.reason) {
@@ -353,7 +426,7 @@ export default function ChessGame() {
         }
       }
     },
-    [gameMode, whiteAiModel, blackAiModel, playerAiModel]
+    [gameMode, whiteAiModel, blackAiModel, playerAiModel, customApiKey]
   );
 
   // Emergency fallback move executed directly on the client if server or AI is unreachable
@@ -368,28 +441,27 @@ export default function ChessGame() {
     const pool = tacticalMoves.length > 0 ? tacticalMoves : legalMoves;
     const chosen = pool[Math.floor(Math.random() * pool.length)];
 
-    let moveResult = null;
     try {
-      moveResult = gameRef.current.move({
+      const res = gameRef.current.move({
         from: chosen.from,
         to: chosen.to,
         promotion: chosen.promotion || undefined,
       });
-    } catch (e) {
-      console.warn('Fallback move error:', e);
-    }
 
-    if (moveResult) {
-      setAiError(null);
-      setFen(gameRef.current.fen());
-      setHistory(gameRef.current.history());
-      setLastMove({ from: chosen.from, to: chosen.to });
-      const reasonText = 'เดินด้วยเครื่องคำนวณหมากสำรอง (Local Fallback Engine)';
-      if (currentTurnColor === 'w') {
-        setWhiteAiReason(reasonText);
-      } else {
-        setBlackAiReason(reasonText);
+      if (res) {
+        setFen(gameRef.current.fen());
+        setHistory(gameRef.current.history());
+        setLastMove({ from: chosen.from, to: chosen.to });
+        setAiError(null);
+        const reasonText = 'เดินหมากคำนวณสำรอง (ฉุกเฉิน)';
+        if (currentTurnColor === 'w') {
+          setWhiteAiReason(reasonText);
+        } else {
+          setBlackAiReason(reasonText);
+        }
       }
+    } catch (e) {
+      console.error('Failed to execute fallback move:', e);
     }
   }, []);
 
@@ -402,6 +474,10 @@ export default function ChessGame() {
     };
   }, []);
 
+  const currentTurn = gameRef.current.turn();
+  const isGameOver = gameRef.current.isGameOver();
+  const isUserTurn = gameMode === 'pvai' && currentTurn === userColor;
+
   // Main turn loop orchestrator
   useEffect(() => {
     if (!gameStarted || isGameOver) return;
@@ -413,13 +489,15 @@ export default function ChessGame() {
 
     // 1. Mode: Player vs AI
     if (gameMode === 'pvai') {
-      const aiColor: PlayerColor = userColor === 'w' ? 'b' : 'w';
-      if (gameRef.current.turn() === aiColor && !isAiThinking && !aiError) {
+      const turn = gameRef.current.turn();
+      const needsAiMove = turn !== userColor; // If it's not player's turn, AI must play!
+      
+      if (needsAiMove && !isAiThinking && !aiError) {
         nextMoveTimerRef.current = setTimeout(() => {
-          if (!isAiThinkingRef.current && gameRef.current.turn() === aiColor && !gameRef.current.isGameOver()) {
-            requestAiMove(gameRef.current.fen(), aiColor);
+          if (!isAiThinkingRef.current && gameRef.current.turn() !== userColor && !gameRef.current.isGameOver()) {
+            requestAiMove(gameRef.current.fen(), turn);
           }
-        }, 250);
+        }, 200);
       }
       return;
     }
@@ -449,8 +527,6 @@ export default function ChessGame() {
     aiVsAiDelay,
     requestAiMove,
   ]);
-
-
 
   // Step manually in AI vs AI mode when paused
   const handleStepAiVsAi = () => {
@@ -657,8 +733,8 @@ export default function ChessGame() {
     }
     if (isAiThinking) {
       if (gameMode === 'aivsai') {
-        const prov = currentTurn === 'w' ? whiteAiProvider : blackAiProvider;
-        return `${getProviderName(prov)} (ฝ่าย${currentTurn === 'w' ? 'ขาว' : 'ดำ'}) กำลังคิด...`;
+        const m = currentTurn === 'w' ? whiteAiModel : blackAiModel;
+        return `AI ฝ่าย${currentTurn === 'w' ? 'ขาว' : 'ดำ'} (${getAiModelName(m)}) กำลังคิด...`;
       }
       return `AI (${getAiModelName(playerAiModel)}) กำลังคิด...`;
     }
@@ -708,13 +784,38 @@ export default function ChessGame() {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* API Key Status / Config Button */}
+            <button
+              onClick={() => {
+                setInputApiKey(customApiKey);
+                setTestKeyStatus('idle');
+                setTestKeyMessage('');
+                setShowApiKeyModal(true);
+              }}
+              className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all cursor-pointer ${
+                customApiKey
+                  ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30'
+                  : 'bg-[#222632] hover:bg-[#2b3040] text-amber-300 border border-amber-500/30'
+              }`}
+              title="ตั้งค่า API Key ส่วนตัว ไม่จำกัดโควตา"
+            >
+              <Key className="w-3.5 h-3.5 text-current" />
+              <span className="hidden sm:inline">
+                {customApiKey ? 'ใช้ API Key ส่วนตัว' : 'ใส่ API Key (เล่นไม่จำกัด)'}
+              </span>
+              <span className="sm:hidden">API Key</span>
+              {customApiKey && (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse ml-0.5" />
+              )}
+            </button>
+
             <button
               onClick={() => setBoardOrientation((prev) => (prev === 'white' ? 'black' : 'white'))}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium bg-[#222632] hover:bg-[#2b3040] text-neutral-200 border border-[#313748] transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium bg-[#222632] hover:bg-[#2b3040] text-neutral-200 border border-[#313748] transition-colors cursor-pointer"
               title="กลับด้านมุมมองกระดาน"
             >
               <ArrowUpDown className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">กลับด้านกระดาน</span>
+              <span className="hidden sm:inline">กลับด้าน</span>
             </button>
 
             <button
@@ -784,8 +885,11 @@ export default function ChessGame() {
           </div>
 
           {/* Chessboard Box */}
-          <div ref={boardContainerRef} className="w-full aspect-square relative rounded-xl overflow-hidden shadow-2xl border border-[#2e3342] bg-[#1a1d26]">
-            {boardWidth > 0 && (
+          <div
+            ref={boardContainerRef}
+            className="w-full aspect-square relative rounded-xl overflow-hidden shadow-2xl border border-[#2e3342] bg-[#1a1d26] min-w-[280px] min-h-[280px]"
+          >
+            {isMounted && boardWidth > 0 && (
               <Chessboard
                 options={{
                   id: 'main-chessboard',
@@ -880,29 +984,56 @@ export default function ChessGame() {
             </div>
 
             {currentTurn === (boardOrientation === 'white' ? 'w' : 'b') && !isGameOver && (
-              <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
+              <div className="flex items-center gap-1.5 text-xs text-amber-400 font-medium">
                 {isAiThinking ? (
                   <>
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                     <span>กำลังคิด...</span>
                   </>
                 ) : (
-                  <span className="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30">
-                    {gameMode === 'pvai' ? 'ถึงตาคุณ' : 'ถึงตาเดิน'}
+                  <span className="px-2 py-0.5 rounded bg-amber-400/10 border border-amber-400/30">
+                    ถึงตาเดิน
                   </span>
                 )}
               </div>
             )}
           </div>
+        </div>
 
-          {/* AI vs AI Spectator Controls Toolbar */}
-          {gameMode === 'aivsai' && (
-            <div className="w-full mt-3 p-3 rounded-xl bg-[#181a22] border border-[#2e3342] flex flex-wrap items-center justify-between gap-2.5">
-              <div className="flex items-center gap-2">
+        {/* Right Panel: Game Status, Controls & Move History */}
+        <div className="w-full lg:w-[380px] flex flex-col gap-4">
+          {/* Status Box */}
+          <div className="bg-[#181a22] rounded-xl border border-[#262a36] p-4 shadow-md">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
+                สถานะการแข่งขัน
+              </span>
+              <div className="flex items-center gap-1.5">
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    isGameOver
+                      ? 'bg-red-400'
+                      : isAiThinking
+                      ? 'bg-amber-400 animate-pulse'
+                      : 'bg-emerald-400'
+                  }`}
+                />
+                <span className="text-xs text-neutral-400 font-mono">
+                  {gameRef.current.history().length} ตาเดิน
+                </span>
+              </div>
+            </div>
+
+            <div className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+              {getGameStatusText()}
+            </div>
+
+            {/* AI vs AI Controls */}
+            {gameMode === 'aivsai' && !isGameOver && (
+              <div className="mt-3 pt-3 border-t border-[#262a36] flex items-center justify-between gap-2">
                 <button
                   onClick={() => setIsAiVsAiPaused((prev) => !prev)}
-                  disabled={isGameOver}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
                     isAiVsAiPaused
                       ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
                       : 'bg-amber-600 hover:bg-amber-500 text-white'
@@ -910,144 +1041,115 @@ export default function ChessGame() {
                 >
                   {isAiVsAiPaused ? (
                     <>
-                      <Play className="w-3.5 h-3.5 fill-current" />
-                      <span>เล่นต่อ</span>
+                      <Play className="w-3.5 h-3.5" /> ดำเนินการต่อ
                     </>
                   ) : (
                     <>
-                      <Pause className="w-3.5 h-3.5 fill-current" />
-                      <span>หยุดชั่วคราว</span>
+                      <Pause className="w-3.5 h-3.5" /> หยุดชั่วคราว
                     </>
                   )}
                 </button>
 
-                {isAiVsAiPaused && !isGameOver && (
+                {isAiVsAiPaused && (
                   <button
                     onClick={handleStepAiVsAi}
                     disabled={isAiThinking}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-[#272c3b] hover:bg-[#343b4f] text-neutral-200 border border-[#3b4359] transition-colors cursor-pointer"
-                    title="สั่งให้ AI เดิน 1 ตา"
+                    className="py-1.5 px-3 rounded-lg text-xs font-medium bg-[#222632] hover:bg-[#2b3040] disabled:opacity-50 text-neutral-200 border border-[#313748] flex items-center gap-1.5 transition-colors cursor-pointer"
                   >
-                    <SkipForward className="w-3.5 h-3.5" />
-                    <span>เดินทีละตา</span>
+                    <SkipForward className="w-3.5 h-3.5" /> เดิน 1 ตา
                   </button>
                 )}
-              </div>
 
-              {/* Speed Preset Selector */}
-              <div className="flex items-center gap-1 text-xs">
-                <span className="text-neutral-400 text-[11px] mr-1 hidden sm:inline">ความเร็ว:</span>
-                <button
-                  onClick={() => setAiVsAiDelay(3000)}
-                  className={`px-2 py-1 rounded text-xs transition-colors cursor-pointer ${
-                    aiVsAiDelay === 3000
-                      ? 'bg-blue-600 text-white font-semibold'
-                      : 'bg-[#222632] text-neutral-400 hover:text-white'
-                  }`}
-                >
-                  ช้า (3s)
-                </button>
-                <button
-                  onClick={() => setAiVsAiDelay(2000)}
-                  className={`px-2 py-1 rounded text-xs transition-colors cursor-pointer ${
-                    aiVsAiDelay === 2000
-                      ? 'bg-blue-600 text-white font-semibold'
-                      : 'bg-[#222632] text-neutral-400 hover:text-white'
-                  }`}
-                >
-                  ปกติ (2s)
-                </button>
-                <button
-                  onClick={() => setAiVsAiDelay(1200)}
-                  className={`px-2 py-1 rounded text-xs transition-colors cursor-pointer ${
-                    aiVsAiDelay === 1200
-                      ? 'bg-blue-600 text-white font-semibold'
-                      : 'bg-[#222632] text-neutral-400 hover:text-white'
-                  }`}
-                >
-                  เร็ว (1.2s)
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Right Section: Status, AI Reasoning & Move History */}
-        <div className="w-full lg:w-80 flex flex-col gap-4">
-          {/* Game Status Card */}
-          <div className="bg-[#181a22] rounded-xl border border-[#262a36] p-4 shadow-md">
-            <div className="text-xs font-medium text-neutral-400 mb-1 flex items-center justify-between">
-              <span>สถานะการแข่งขัน</span>
-              <span className="font-mono text-[11px] text-neutral-500">
-                ตาที่ {Math.floor(history.length / 2) + 1}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-                {isGameOver ? (
-                  <Award className="w-5 h-5 text-amber-400" />
-                ) : (
-                  <div
-                    className={`w-2.5 h-2.5 rounded-full ${
-                      isAiThinking
-                        ? 'bg-amber-400 animate-ping'
-                        : isUserTurn
-                        ? 'bg-emerald-400'
-                        : 'bg-blue-400'
-                    }`}
-                  />
-                )}
-                <span>{getGameStatusText()}</span>
-              </div>
-            </div>
-
-            {/* Error Banner with Retry & Quick Switch */}
-            {aiError && (
-              <div className="mt-3 p-3 rounded-lg bg-red-950/40 border border-red-800/60 text-xs text-red-200 flex flex-col gap-2">
-                <div className="flex items-start gap-1.5">
-                  <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-                  <span className="leading-relaxed">{aiError}</span>
-                </div>
-                <div className="flex flex-wrap items-center justify-end gap-2 mt-1">
-                  <button
-                    onClick={executeLocalFallbackMove}
-                    className="px-3 py-1 rounded bg-amber-600 hover:bg-amber-500 text-white text-xs font-medium transition-colors cursor-pointer"
+                <div className="flex items-center gap-1 text-xs text-neutral-400">
+                  <span>ความเร็ว:</span>
+                  <select
+                    value={aiVsAiDelay}
+                    onChange={(e) => setAiVsAiDelay(Number(e.target.value))}
+                    className="bg-[#222632] border border-[#313748] text-white rounded px-1.5 py-1 text-xs focus:outline-none"
                   >
-                    เดินหมากสำรองทันที
-                  </button>
-                  {aiError.includes('API_KEY') && (
-                    <button
-                      onClick={() => {
-                        setWhiteAiProvider('gemini');
-                        setBlackAiProvider('gemini');
-                        setPlayerAiOpponent('gemini');
-                        setAiError(null);
-                        requestAiMove(gameRef.current.fen(), currentTurn);
-                      }}
-                      className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium transition-colors cursor-pointer"
-                    >
-                      สลับใช้ Gemini แทน
-                    </button>
-                  )}
-                  <button
-                    onClick={() => requestAiMove(gameRef.current.fen(), currentTurn)}
-                    disabled={isAiThinking}
-                    className="px-3 py-1 rounded bg-red-700 hover:bg-red-600 text-white text-xs font-medium transition-colors cursor-pointer"
-                  >
-                    ลองอีกครั้ง
-                  </button>
+                    <option value={1000}>เร็ว (1วิ)</option>
+                    <option value={1800}>ปกติ (1.8วิ)</option>
+                    <option value={3000}>ช้า (3วิ)</option>
+                  </select>
                 </div>
               </div>
             )}
           </div>
 
-          {/* AI Reasoning Panel */}
+          {/* AI Error Alert Card */}
+          {aiError && (
+            <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3.5 text-xs text-red-200 shadow-md">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <div className="font-semibold text-red-300 mb-1">แจ้งเตือนจาก AI Engine</div>
+                  <div className="leading-relaxed mb-3 text-red-200">{aiError}</div>
+                  
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => {
+                        setAiError(null);
+                        const turn = gameRef.current.turn();
+                        requestAiMove(gameRef.current.fen(), turn);
+                      }}
+                      className="px-2.5 py-1 rounded bg-red-600 hover:bg-red-500 text-white font-medium transition-colors cursor-pointer inline-flex items-center gap-1"
+                    >
+                      <RefreshCw className="w-3 h-3" /> ลองอีกครั้ง
+                    </button>
+
+                    <button
+                      onClick={executeLocalFallbackMove}
+                      className="px-2.5 py-1 rounded bg-[#2a2636] hover:bg-[#38334a] text-purple-300 border border-purple-500/40 font-medium transition-colors cursor-pointer inline-flex items-center gap-1"
+                    >
+                      <SkipForward className="w-3 h-3" /> เดินหมากสำรองทันที
+                    </button>
+
+                    {!customApiKey && (
+                      <button
+                        onClick={() => {
+                          setInputApiKey('');
+                          setShowApiKeyModal(true);
+                        }}
+                        className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-medium transition-colors cursor-pointer inline-flex items-center gap-1"
+                      >
+                        <Key className="w-3 h-3" /> ใส่ API Key ส่วนตัว (แก้โควตาเต็ม)
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* API Key Active Indicator Banner */}
+          {customApiKey && !aiError && (
+            <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-xl p-2.5 px-3 flex items-center justify-between text-xs text-emerald-300">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>กำลังใช้ Gemini API Key ส่วนตัว (โควตาอิสระ)</span>
+              </div>
+              <button
+                onClick={() => setShowApiKeyModal(true)}
+                className="text-[11px] text-emerald-400 hover:underline cursor-pointer"
+              >
+                จัดการ
+              </button>
+            </div>
+          )}
+
+          {/* AI Reasoning Box */}
           {gameMode === 'aivsai' ? (
-            // Dual AI Reasoning Panel for AI vs AI mode
-            <div className="bg-[#181a22] rounded-xl border border-[#262a36] p-4 shadow-md flex flex-col gap-3">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-neutral-300">
-                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                <span>การวิเคราะห์กลยุทธ์ของ AI</span>
+            <div className="bg-[#181a22] rounded-xl border border-[#262a36] p-3.5 shadow-md space-y-2.5">
+              <div className="flex items-center justify-between text-xs font-semibold text-neutral-300">
+                <span className="flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  <span>การวิเคราะห์กลยุทธ์ของ AI</span>
+                </span>
+                {usedCustomKeyForLastMove && (
+                  <span className="text-[10px] text-emerald-400 bg-emerald-500/15 px-1.5 py-0.5 rounded">
+                    Custom Key
+                  </span>
+                )}
               </div>
 
               {/* White AI Card */}
@@ -1087,9 +1189,16 @@ export default function ChessGame() {
             (whiteAiReason || blackAiReason) &&
             !aiError && (
               <div className="bg-[#181a22] rounded-xl border border-[#262a36] p-3.5 shadow-md">
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-neutral-300 mb-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                  <span>ความคิดของ AI ({getAiModelName(playerAiModel)}):</span>
+                <div className="flex items-center justify-between text-xs font-semibold text-neutral-300 mb-1.5">
+                  <span className="flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    <span>ความคิดของ AI ({getAiModelName(playerAiModel)}):</span>
+                  </span>
+                  {usedCustomKeyForLastMove && (
+                    <span className="text-[10px] text-emerald-400 bg-emerald-500/15 px-1.5 py-0.5 rounded">
+                      Custom Key
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs text-neutral-300 italic leading-relaxed">
                   {userColor === 'w' ? blackAiReason : whiteAiReason}
@@ -1143,6 +1252,162 @@ export default function ChessGame() {
         </div>
       </main>
 
+      {/* API Key Settings Modal */}
+      {showApiKeyModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-[#181a22] border border-[#2f3547] rounded-2xl p-5 sm:p-6 max-w-lg w-full text-left shadow-2xl my-6">
+            <div className="flex items-center justify-between mb-3 border-b border-[#262a36] pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center border border-amber-500/30">
+                  <Key className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-base sm:text-lg font-bold text-white">ตั้งค่า Gemini API Key ส่วนตัว</h2>
+                  <p className="text-xs text-neutral-400">เล่นได้ไม่จำกัด ไม่ต้องรอหรือพึ่งพาโควตากลาง</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowApiKeyModal(false)}
+                className="text-neutral-400 hover:text-white text-lg p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Current Status Banner */}
+            <div className="mb-4">
+              {customApiKey ? (
+                <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-between text-xs text-emerald-300">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>กำลังใช้งาน Gemini API Key ส่วนตัวของคุณ</span>
+                  </div>
+                  <button
+                    onClick={handleClearApiKey}
+                    className="text-red-400 hover:text-red-300 flex items-center gap-1 font-medium cursor-pointer"
+                    title="ลบเพื่อกลับไปใช้โควตาเริ่มต้น"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> ลบคีย์
+                  </button>
+                </div>
+              ) : (
+                <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/25 text-xs text-blue-300 leading-relaxed">
+                  ℹ️ ขณะนี้กำลังใช้โควตากลางของระบบ ซึ่งมีจำกัด หากคุณใส่ API Key ของคุณเอง (สร้างได้ฟรี) จะเล่นได้ต่อเนื่องไม่มีสะดุดทั้งโหมด แข่งกับ AI และ AI vs AI
+                </div>
+              )}
+            </div>
+
+            {/* Input Form */}
+            <div className="space-y-3 mb-4">
+              <div>
+                <label className="text-xs font-semibold text-neutral-300 block mb-1.5">
+                  วาง Google Gemini API Key ของคุณ:
+                </label>
+                <div className="relative">
+                  <input
+                    type={showKeyText ? 'text' : 'password'}
+                    value={inputApiKey}
+                    onChange={(e) => {
+                      setInputApiKey(e.target.value);
+                      if (testKeyStatus !== 'idle') {
+                        setTestKeyStatus('idle');
+                        setTestKeyMessage('');
+                      }
+                    }}
+                    placeholder="AIzaSy..."
+                    className="w-full py-2.5 pl-3 pr-10 rounded-xl bg-[#222632] border border-[#313748] text-white text-xs sm:text-sm font-mono focus:outline-none focus:border-blue-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowKeyText((prev) => !prev)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-white cursor-pointer"
+                  >
+                    {showKeyText ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Test Status Feedback */}
+              {testKeyMessage && (
+                <div
+                  className={`p-2.5 rounded-lg text-xs flex items-start gap-2 ${
+                    testKeyStatus === 'testing'
+                      ? 'bg-amber-500/15 border border-amber-500/30 text-amber-300'
+                      : testKeyStatus === 'success'
+                      ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-300'
+                      : 'bg-red-500/15 border border-red-500/30 text-red-300'
+                  }`}
+                >
+                  {testKeyStatus === 'testing' && <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0 mt-0.5" />}
+                  {testKeyStatus === 'success' && <Check className="w-3.5 h-3.5 shrink-0 mt-0.5 text-emerald-400" />}
+                  {testKeyStatus === 'error' && <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-red-400" />}
+                  <div className="flex-1 leading-relaxed">{testKeyMessage}</div>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => handleTestApiKey(inputApiKey)}
+                  disabled={testKeyStatus === 'testing' || !inputApiKey.trim()}
+                  className="flex-1 py-2 rounded-xl bg-[#262b3a] hover:bg-[#32394c] disabled:opacity-50 text-neutral-200 border border-[#384055] text-xs font-semibold transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  {testKeyStatus === 'testing' ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" /> กำลังตรวจสอบ...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkle className="w-3.5 h-3.5 text-amber-400" /> ทดสอบการเชื่อมต่อ
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleSaveApiKey(inputApiKey);
+                    setShowApiKeyModal(false);
+                  }}
+                  className="flex-1 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
+                >
+                  <Check className="w-3.5 h-3.5" /> บันทึกและเริ่มเล่น
+                </button>
+              </div>
+            </div>
+
+            {/* How to get a free Gemini API Key guide */}
+            <div className="p-3.5 rounded-xl bg-[#1f2330] border border-[#2b3144] text-xs space-y-2">
+              <div className="font-semibold text-neutral-200 flex items-center gap-1.5">
+                <Info className="w-3.5 h-3.5 text-blue-400" />
+                <span>วิธีรับ Gemini API Key ฟรีใน 30 วินาที:</span>
+              </div>
+              <ol className="list-decimal list-inside space-y-1 text-neutral-300 text-[11px] leading-relaxed">
+                <li>เปิด Google AI Studio (ล็อกอินด้วยบัญชี Google ของคุณ)</li>
+                <li>คลิกปุ่ม <strong>&quot;Get API key&quot;</strong> หรือ <strong>&quot;Create API key&quot;</strong></li>
+                <li>คัดลอกคีย์ที่ขึ้นต้นด้วย <code>AIzaSy...</code> แล้วนำมาวางในช่องด้านบน</li>
+              </ol>
+
+              <div className="pt-1 flex items-center justify-between">
+                <a
+                  href="https://aistudio.google.com/app/apikey"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[11px] text-blue-400 hover:text-blue-300 font-medium hover:underline"
+                >
+                  เปิด Google AI Studio เพื่อรับ Key ฟรี <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+            </div>
+
+            <p className="mt-3 text-[10px] text-neutral-500 text-center">
+              🔒 คีย์จะถูกบันทึกไว้ใน Browser ของคุณเท่านั้น ไม่มีการส่งไปเก็บในฐานข้อมูลภายนอก ปลอดภัย 100%
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Start / Mode Selection Modal */}
       {showSetupModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
@@ -1173,6 +1438,25 @@ export default function ChessGame() {
                     </button>
                   ))}
                 </div>
+
+                {/* API Key Shortcut */}
+                <div className="mb-4 p-2.5 rounded-xl bg-[#202430] border border-[#2d3342] flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-1.5 text-neutral-300">
+                    <Key className="w-3.5 h-3.5 text-amber-400" />
+                    <span>{customApiKey ? 'ใช้ API Key ส่วนตัวแล้ว ✅' : 'ต้องการใส่ API Key ส่วนตัว?'}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInputApiKey(customApiKey);
+                      setShowApiKeyModal(true);
+                    }}
+                    className="text-blue-400 hover:text-blue-300 font-medium cursor-pointer"
+                  >
+                    {customApiKey ? 'แก้ไข' : 'ใส่คีย์ฟรี'}
+                  </button>
+                </div>
+
                 <div className="flex gap-2">
                   <button
                     onClick={() => setModalStep('mode')}
@@ -1258,6 +1542,24 @@ export default function ChessGame() {
                       ))}
                     </select>
                   </div>
+
+                  {/* API Key Shortcut */}
+                  <div className="p-2.5 rounded-xl bg-[#202430] border border-[#2d3342] flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-1.5 text-neutral-300">
+                      <Key className="w-3.5 h-3.5 text-amber-400" />
+                      <span>{customApiKey ? 'ใช้ API Key ส่วนตัวแล้ว ✅' : 'ใส่ API Key ส่วนตัวเพื่อแข่งได้ยาวนาน'}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setInputApiKey(customApiKey);
+                        setShowApiKeyModal(true);
+                      }}
+                      className="text-purple-400 hover:text-purple-300 font-medium cursor-pointer"
+                    >
+                      {customApiKey ? 'แก้ไข' : 'ใส่คีย์ฟรี'}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex gap-2">
@@ -1269,7 +1571,7 @@ export default function ChessGame() {
                   </button>
                   <button
                     onClick={() => startNewGame('aivsai', 'w')}
-                    className="w-2/3 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-xs text-white font-semibold transition-colors cursor-pointer"
+                    className="w-2/3 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-xs text-white font-semibold transition-colors cursor-pointer shadow-sm"
                   >
                     เริ่มการแข่งขัน AI vs AI ⚔️
                   </button>
@@ -1281,9 +1583,33 @@ export default function ChessGame() {
                   <Shield className="w-6 h-6" />
                 </div>
                 <h2 className="text-xl font-bold text-white mb-1">เลือกโหมดการเล่น</h2>
-                <p className="text-xs text-neutral-400 mb-5">
+                <p className="text-xs text-neutral-400 mb-4">
                   เลือกรูปแบบการแข่งขันหมากรุกที่คุณต้องการ
                 </p>
+
+                {/* API Key Banner inside Modal */}
+                <div className="mb-4 p-3 rounded-xl bg-[#202432] border border-[#2d3448] flex items-center justify-between text-xs text-left">
+                  <div className="flex items-center gap-2">
+                    <Key className="w-4 h-4 text-amber-400 shrink-0" />
+                    <div>
+                      <div className="font-semibold text-neutral-200">
+                        {customApiKey ? 'API Key ส่วนตัว: พร้อมใช้งาน' : 'ใส่ API Key ส่วนตัว (ฟรี)'}
+                      </div>
+                      <div className="text-[11px] text-neutral-400">
+                        {customApiKey ? 'เล่นได้อิสระ ไม่จำกัดโควตา' : 'ไม่พึ่งพาโควตาคนสร้าง เล่นได้ไม่จำกัด'}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setInputApiKey(customApiKey);
+                      setShowApiKeyModal(true);
+                    }}
+                    className="px-2.5 py-1.5 rounded-lg bg-[#2b3144] hover:bg-[#373f56] text-amber-300 border border-amber-500/30 text-[11px] font-medium transition-colors cursor-pointer"
+                  >
+                    {customApiKey ? 'ดูคีย์' : 'ใส่คีย์ฟรี'}
+                  </button>
+                </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
                   {/* Option 1: Player vs AI */}

@@ -15,11 +15,13 @@ export const LegalMoveSchema = z.object({
 export type LegalMove = z.infer<typeof LegalMoveSchema>;
 
 export const AiMoveRequestSchema = z.object({
-  fen: z.string().min(1, 'FEN is required'),
-  aiColor: z.union([z.literal('w'), z.literal('b')]),
+  fen: z.string().optional(),
+  aiColor: z.union([z.literal('w'), z.literal('b')]).optional(),
   legalMoves: z.array(LegalMoveSchema).optional(),
   provider: z.string().optional(),
   model: z.string().optional(),
+  apiKey: z.string().optional(),
+  action: z.string().optional(),
 });
 
 export type AiMoveRequest = z.infer<typeof AiMoveRequestSchema>;
@@ -47,7 +49,7 @@ export const AiMoveResponseSchema = z.object({
 
 export type AiMoveResponse = z.infer<typeof AiMoveResponseSchema>;
 
-// Rate limiting in-memory: 30 requests per minute per IP
+// Rate limiting in-memory: 30 requests per minute per IP for shared server quota
 interface RateLimitRecord {
   count: number;
   resetAt: number;
@@ -84,8 +86,13 @@ export interface HandleAiMoveResult {
           promotion: string | null;
           san: string;
           reason: string;
+          isCustomKey?: boolean;
         };
         newFen: string;
+      }
+    | {
+        success: true;
+        message: string;
       }
     | {
         success: false;
@@ -97,17 +104,6 @@ export async function processAiMoveRequest(
   body: unknown,
   clientIp: string
 ): Promise<HandleAiMoveResult> {
-  // 1. Rate Limit
-  if (!checkRateLimit(clientIp)) {
-    return {
-      status: 429,
-      data: {
-        success: false,
-        error: 'คำขอมากเกินไป (จำกัด 30 ครั้งต่อนาที) กรุณารอสักครู่แล้วลองใหม่',
-      },
-    };
-  }
-
   let parsedInput = body;
   if (typeof body === 'string') {
     try {
@@ -123,7 +119,7 @@ export async function processAiMoveRequest(
     }
   }
 
-  // 2. Validate Request with Zod
+  // 1. Validate Request with Zod
   const parseResult = AiMoveRequestSchema.safeParse(parsedInput);
   if (!parseResult.success) {
     return {
@@ -135,9 +131,92 @@ export async function processAiMoveRequest(
     };
   }
 
-  const { fen, aiColor, model } = parseResult.data;
+  const { fen, aiColor, model, apiKey, action } = parseResult.data;
+  const userProvidedKey = typeof apiKey === 'string' && apiKey.trim().length > 0 ? apiKey.trim() : null;
 
-  // 3. Validate Chess Board State
+  // 2. Action: Verify user API key
+  if (action === 'verify-key') {
+    if (!userProvidedKey) {
+      return {
+        status: 400,
+        data: {
+          success: false,
+          error: 'กรุณากรอก API Key ก่อนทดสอบ',
+        },
+      };
+    }
+
+    try {
+      const testAi = new GoogleGenAI({
+        apiKey: userProvidedKey,
+        httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+      });
+
+      const testRes = await testAi.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: 'Respond with the single word "OK"',
+      });
+
+      if (testRes.text) {
+        return {
+          status: 200,
+          data: {
+            success: true,
+            message: 'API Key ใช้งานได้สมบูรณ์! คุณสามารถใช้เล่นทั้งโหมดผู้เล่น vs AI และ AI vs AI ได้ไม่จำกัด',
+          },
+        };
+      } else {
+        return {
+          status: 200,
+          data: {
+            success: true,
+            message: 'API Key เชื่อมต่อสำเร็จ พร้อมใช้งาน',
+          },
+        };
+      }
+    } catch (testErr: any) {
+      const msg = testErr?.message || String(testErr);
+      let thaiMsg = msg;
+      if (msg.includes('API_KEY_INVALID') || msg.includes('400') || msg.includes('API key not valid')) {
+        thaiMsg = 'API Key ไม่ถูกต้อง กรุณาคัดลอกจาก Google AI Studio ให้ครบถ้วน';
+      } else if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED')) {
+        thaiMsg = 'API Key นี้เกินโควตาใช้งานชั่วคราว กรุณาตรวจสอบสถานะโควตาใน Google AI Studio';
+      } else if (msg.includes('PERMISSION_DENIED')) {
+        thaiMsg = 'สิทธิ์การใช้งาน API Key ถูกปฏิเสธ กรุณาตรวจสอบการตั้งค่าโครงการใน Google AI Studio';
+      }
+      return {
+        status: 400,
+        data: {
+          success: false,
+          error: `การทดสอบ API Key ล้มเหลว: ${thaiMsg}`,
+        },
+      };
+    }
+  }
+
+  // 3. Move generation requires fen and aiColor
+  if (!fen || !aiColor) {
+    return {
+      status: 400,
+      data: {
+        success: false,
+        error: 'ต้องระบุ fen และ aiColor เพื่อขอตาเดินของ AI',
+      },
+    };
+  }
+
+  // 4. Rate Limit (Bypassed if user provides their own private API key)
+  if (!userProvidedKey && !checkRateLimit(clientIp)) {
+    return {
+      status: 429,
+      data: {
+        success: false,
+        error: 'คำขอมากเกินไป (จำกัด 30 ครั้งต่อนาทีสำหรับโควตาฟรีส่วนกลาง) แนะนำให้ใส่ API Key ส่วนตัวเพื่อเล่นได้ไม่จำกัด',
+      },
+    };
+  }
+
+  // 5. Validate Chess Board State
   let game: Chess;
   try {
     game = new Chess(fen);
@@ -171,7 +250,7 @@ export async function processAiMoveRequest(
     };
   }
 
-  // 4. Compute Legal Moves on Server
+  // 6. Compute Legal Moves on Server
   const serverLegalMoves = game.moves({ verbose: true });
   if (serverLegalMoves.length === 0) {
     return {
@@ -268,6 +347,7 @@ Choose EXACTLY ONE move from the legal moves list above.
 Return JSON with 'from', 'to', 'promotion' (if pawn promotion, else null), and a brief Thai explanation in 'reason'.`;
 
   let lastApiError = '';
+  let hitUserKeyQuotaOrError = false;
 
   // Generic JSON cleaner
   function cleanAndParseJson(text: string): AiMoveResponse | null {
@@ -292,27 +372,30 @@ Return JSON with 'from', 'to', 'promotion' (if pawn promotion, else null), and a
 
   // Caller for Google Gemini
   async function callGemini(promptText: string): Promise<AiMoveResponse | null> {
-    const apiKey =
+    const effectiveApiKey =
+      userProvidedKey ||
       process.env.GEMINI_API_KEY ||
       process.env.GOOGLE_API_KEY ||
       process.env.GEMINI_KEY ||
       process.env.VITE_GEMINI_API_KEY ||
       process.env.NEXT_PUBLIC_GEMINI_API_KEY;
 
-    if (!apiKey) {
-      lastApiError = 'ไม่ได้ตั้งค่า GEMINI_API_KEY ใน Environment Variables';
+    if (!effectiveApiKey) {
+      lastApiError = 'ไม่ได้ตั้งค่า GEMINI_API_KEY ในระบบ กรุณาใส่ API Key ของคุณเองที่ปุ่ม "ตั้งค่า API Key" เพื่อเริ่มเล่น';
       return null;
     }
 
     const ai = new GoogleGenAI({
-      apiKey,
+      apiKey: effectiveApiKey,
       httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
     });
 
-    const requestedModel = model || process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite';
+    const requestedModel = model || process.env.GEMINI_MODEL || 'gemini-2.5-flash';
     const modelCandidates = Array.from(
       new Set([
         requestedModel,
+        'gemini-2.5-flash',
+        'gemini-2.5-pro',
         'gemini-3.1-flash-lite',
         'gemini-flash-latest',
         'gemini-3.8-flash',
@@ -350,10 +433,15 @@ Return JSON with 'from', 'to', 'promotion' (if pawn promotion, else null), and a
       } catch (err: any) {
         lastApiError = err?.message || String(err);
         const isQuota = lastApiError.includes('429') || lastApiError.includes('RESOURCE_EXHAUSTED');
-        if (isQuota) {
-          console.info(`Model ${m} reached free tier quota limit, checking fallback candidate...`);
+        if (userProvidedKey) {
+          hitUserKeyQuotaOrError = true;
+          console.warn(`User API Key attempt failed on model ${m}:`, lastApiError);
         } else {
-          console.warn(`Gemini attempt failed with model ${m}:`, lastApiError);
+          if (isQuota) {
+            console.info(`Model ${m} reached free tier quota limit, checking fallback candidate...`);
+          } else {
+            console.warn(`Gemini attempt failed with model ${m}:`, lastApiError);
+          }
         }
       }
     }
@@ -378,7 +466,7 @@ Return JSON with 'from', 'to', 'promotion' (if pawn promotion, else null), and a
     validation = chosen ? testMove(chosen) : { valid: false, moveResult: null, newFen: '', from: '', to: '', promotion: null };
   }
 
-  // If GEMINI_API_KEY is not set, return 400 error
+  // If GEMINI_API_KEY is not set anywhere, return clear error
   if (lastApiError && lastApiError.includes('ไม่ได้ตั้งค่า')) {
     return {
       status: 400,
@@ -389,10 +477,23 @@ Return JSON with 'from', 'to', 'promotion' (if pawn promotion, else null), and a
     };
   }
 
-  // Format safe response on failure or fallback to legal move if quota exceeded or error occurred
+  // If user provided their own key and it is invalid (e.g. 400 API_KEY_INVALID), inform them clearly
+  if (userProvidedKey && hitUserKeyQuotaOrError && !chosen) {
+    if (lastApiError.includes('API_KEY_INVALID') || lastApiError.includes('API key not valid')) {
+      return {
+        status: 400,
+        data: {
+          success: false,
+          error: 'API Key ที่คุณระบุไม่ถูกต้อง กรุณากดปุ่ม "ตั้งค่า API Key" แล้วตรวจสอบคีย์อีกครั้ง',
+        },
+      };
+    }
+  }
+
+  // Safe fallback to valid chess legal move if quota exceeded or temporary network issue
   if (!validation.valid || !chosen || !validation.moveResult) {
     if (legalMovesList && legalMovesList.length > 0) {
-      const captureMoves = legalMovesList.filter((m) => m.san.includes('x') || m.san.includes('+'));
+      const captureMoves = legalMovesList.filter((m) => m.san.includes('x') || m.san.includes('+') || m.san.includes('#'));
       const pool = captureMoves.length > 0 ? captureMoves : legalMovesList;
       const fallbackRaw = pool[Math.floor(Math.random() * pool.length)];
       const testRes = testMove(fallbackRaw);
@@ -406,7 +507,10 @@ Return JSON with 'from', 'to', 'promotion' (if pawn promotion, else null), and a
               to: testRes.to,
               promotion: testRes.promotion,
               san: testRes.moveResult.san,
-              reason: 'เดินอัตโนมัติสำรอง (เนื่องจากโควตา AI เต็มชั่วคราว)',
+              reason: userProvidedKey
+                ? 'เดินหมากคำนวณสำรอง (เนื่องจากโมเดล AI ตอบสนองช้า)'
+                : 'เดินอัตโนมัติสำรอง (เนื่องจากโควตาเซิร์ฟเวอร์เต็ม — คุณสามารถกดปุ่ม "ตั้งค่า API Key" เพื่อใส่คีย์ฟรีของตนเองได้)',
+              isCustomKey: !!userProvidedKey,
             },
             newFen: testRes.newFen,
           },
@@ -425,6 +529,7 @@ Return JSON with 'from', 'to', 'promotion' (if pawn promotion, else null), and a
         promotion: validation.promotion,
         san: validation.moveResult?.san || 'e4',
         reason: chosen?.reason?.slice(0, 120) || 'เดินตามกลยุทธ์ AI',
+        isCustomKey: !!userProvidedKey,
       },
       newFen: validation.newFen,
     },
